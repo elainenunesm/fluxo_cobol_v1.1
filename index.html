@@ -1613,6 +1613,27 @@
 
   <div class="ribbon-sep"></div>
 
+  <!-- Grupo: Fluxo -->
+  <div class="ribbon-group">
+    <div class="ribbon-group-btns">
+      <select id="view-select" class="ribbon-select" title="Tipo de visão do fluxo"
+              onchange="document.getElementById('depth-select').style.display=this.value==='macro'?'none':''">
+        <option value="detail">&#128209; Detalhado</option>
+        <option value="macro">&#128200; Macro-fluxo</option>
+      </select>
+      <select id="depth-select" class="ribbon-select" title="Profundidade de expansão de parágrafos">
+        <option value="30">&#128260; Completo (padrão)</option>
+        <option value="3">&#128196; 3 níveis</option>
+        <option value="2">&#128196; 2 níveis</option>
+        <option value="1">&#9646; 1 nível</option>
+        <option value="0">&#9632; Apenas chamadas</option>
+      </select>
+    </div>
+    <div class="ribbon-group-name">Visão</div>
+  </div>
+
+  <div class="ribbon-sep"></div>
+
   <!-- Grupo: Documentação -->
   <div class="ribbon-group">
     <div class="ribbon-group-btns">
@@ -2167,6 +2188,8 @@ function parseCobol(code) {
   let secaoAtual = null;
   let programId = null;
   let lineNumMap = {};         // nome -> �ndices globais de linha (0-based)
+  let fdMap = {};              // nome-registro-01 → nome-arquivo (FD)
+  let _lastFD = null;          // último FD encontrado (para capturar o 01 seguinte)
 
   // Sections de outras divis�es (DATA, ENV) � ignoradas no fluxo
   const sectionsNaoProcedure = new Set([
@@ -2238,8 +2261,19 @@ function parseCobol(code) {
       return;
     }
 
-    // Antes do PROCEDURE DIVISION ignora tudo
-    if (!inProcedure) return;
+    // Antes do PROCEDURE DIVISION ignora tudo (exceto FD e 01 do FILE SECTION)
+    if (!inProcedure) {
+      // Detecta FD para construir fdMap (registro-01 → nome-arquivo)
+      const fdM = l.match(/^FD\s+([A-Z][A-Z0-9-]*)/i);
+      if (fdM) { _lastFD = fdM[1].toUpperCase(); }
+      else if (_lastFD) {
+        const recM = l.match(/^01\s+([A-Z][A-Z0-9-]*)/i);
+        if (recM) { fdMap[recM[1].toUpperCase()] = _lastFD; _lastFD = null; }
+        else if (/^\d/.test(l.trim())) { /* outra linha de nível — ignora */ }
+        else { _lastFD = null; }
+      }
+      return;
+    }
 
     // Detecta SECTION dentro do PROCEDURE DIVISION
     // Aceita m�ltiplos espa�os/tabs entre o nome e a palavra SECTION,
@@ -2295,13 +2329,14 @@ function parseCobol(code) {
     if (!temConteudo) tipos[nome] = 'fim-paragrafo';
   });
 
-  return { estrutura, tipos, secoes, ordemParagrafos, programId, lineNumMap };
+  return { estrutura, tipos, secoes, ordemParagrafos, programId, lineNumMap, fdMap };
 }
 
 // ================= AST BUILDER =================
 // Converte linhas de um par�grafo em uma �rvore de n�s de execu��o.
 // EXIT sozinho � conven��o de limite � ignorado visualmente.
-function buildAST(linhas, lineNums) {
+function buildAST(linhas, lineNums, fdMap) {
+  fdMap = fdMap || {};
   let nodes = [];
   let i = 0;
   while (i < linhas.length) {
@@ -2399,7 +2434,7 @@ function buildAST(linhas, lineNums) {
           if (periodClose) break; // ponto fecha o IF
         }
       }
-      nodes.push({ type: 'if', label: condLabel, sim: buildAST(sim, simNums), nao: buildAST(nao, naoNums), srcLine: _srcLine });
+      nodes.push({ type: 'if', label: condLabel, sim: buildAST(sim, simNums, fdMap), nao: buildAST(nao, naoNums, fdMap), srcLine: _srcLine });
       continue;
     }
     // --- PERFORM ----------------------------------------------------------------
@@ -2435,19 +2470,56 @@ function buildAST(linhas, lineNums) {
         if (bl) { body.push(cur); bodyNums.push(_curLN2); }
         if (periodClosePl) break; // ponto fecha o PERFORM inline
       }
-      nodes.push({ type: 'loop', label: cond, body: buildAST(body, bodyNums) });
+      nodes.push({ type: 'loop', label: cond, body: buildAST(body, bodyNums, fdMap) });
       continue;
     }
     // EVALUATE � switch/case: consome at� END-EVALUATE
     if (/^EVALUATE\b/.test(lUp)) {
-      let depth = 0;
-      while (i < linhas.length) {
-        let bl = linhas[i].trim().replace(/\.$/, '').toUpperCase();
+      let _evSubj = l;
+      let _evWhens = [];
+      let _evCurWhen = null;
+      let _evDone  = false;
+      let _evDepth = 0;
+      while (i < linhas.length && !_evDone) {
+        let _evTr  = linhas[i].trim();
+        let _evPer = _evTr.endsWith('.');
+        let _evUp  = _evTr.replace(/\.$/, '').toUpperCase();
+        let _evLN  = lineNums ? lineNums[i] : null;
         i++;
-        if (/^EVALUATE\b/.test(bl)) depth++;
-        if (/^END-EVALUATE/.test(bl)) { if (depth === 0) break; depth--; }
+        if (!_evUp) { if (_evPer) _evDone = true; continue; }
+        if (/^EVALUATE\b/.test(_evUp)) { _evDepth++; }
+        if (/^END-EVALUATE\b/.test(_evUp)) {
+          if (_evDepth === 0) { _evDone = true; break; }
+          _evDepth--;
+          if (_evCurWhen) { _evCurWhen.bodyL.push(_evTr.replace(/\.$/, '')); _evCurWhen.bodyN.push(_evLN); }
+          if (_evPer) _evDone = true;
+          continue;
+        }
+        if (_evDepth === 0 && /^WHEN\b/.test(_evUp)) {
+          if (_evCurWhen) _evWhens.push(_evCurWhen);
+          _evCurWhen = { label: _evTr.replace(/\.$/, ''), bodyL: [], bodyN: [] };
+        } else if (_evCurWhen) {
+          _evCurWhen.bodyL.push(_evTr.replace(/\.$/, ''));
+          _evCurWhen.bodyN.push(_evLN);
+        }
+        if (_evPer) { _evDone = true; }
       }
-      nodes.push({ type: 'evaluate', label: l });
+      if (_evCurWhen) _evWhens.push(_evCurWhen);
+      let _evDetParts = [_evSubj];
+      _evWhens.forEach(function(w) {
+        _evDetParts.push(w.label);
+        w.bodyL.forEach(function(x) { _evDetParts.push('    ' + x); });
+      });
+      _evDetParts.push('END-EVALUATE');
+      nodes.push({
+        type: 'evaluate',
+        label: _evSubj,
+        detail: _evDetParts.join('\n'),
+        srcLine: _srcLine,
+        whens: _evWhens.map(function(w) {
+          return { label: w.label, nodes: buildAST(w.bodyL, w.bodyN, fdMap) };
+        })
+      });
       continue;
     }
     // STRING ... END-STRING � coleta todas as linhas e gera n� �nico
@@ -2509,17 +2581,65 @@ function buildAST(linhas, lineNums) {
         if (cleanS) sqlLines.push(cleanS);
         if (periodCloseSQL) break;
       }
-      // Extrai o tipo de opera��o SQL (SELECT, INSERT, UPDATE, DELETE, FETCH, OPEN, CLOSE, CALL...)
+      // Extrai o tipo de operação SQL e normaliza para grupo visual
       let allSQL = sqlLines.join(' ').toUpperCase();
       let opM = allSQL.match(/EXEC\s+SQL\s+(\w+)/);
       let sqlOp = opM ? opM[1] : 'SQL';
-      // Normaliza para grupo visual (SELECT / INSERT / UPDATE / DELETE / OTHER)
-      const sqlOpGroup = ['SELECT','INSERT','UPDATE','DELETE'].includes(sqlOp) ? sqlOp : 'OTHER';
-      // Tabela principal (FROM/INTO/UPDATE tbl/JOIN)
-      let tblM = allSQL.match(/(?:FROM|INTO|UPDATE|JOIN)\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
-      let tbl = tblM ? tblM[1] : '';
-      // Label em 2 linhas: opera��o na 1�, tabela na 2�
-      let shortLabel = sqlOp + (tbl ? '\n' + tbl : '');
+      let sqlOpGroup, shortLabel;
+      // ── Operações de cursor ──────────────────────────────────────────
+      if (sqlOp === 'DECLARE' && /\bCURSOR\b/.test(allSQL)) {
+        // DECLARE cursor-name CURSOR FOR SELECT ...
+        let dcM = allSQL.match(/DECLARE\s+([A-Z][A-Z0-9_#@$-]*)\s+CURSOR/);
+        let cursorName = dcM ? dcM[1] : '';
+        // Tabela do SELECT interno: FROM ou JOIN
+        let tblM = allSQL.match(/(?:FROM|JOIN)\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
+        let tbl = tblM ? tblM[1] : '';
+        sqlOpGroup = 'CURSOR-DECLARE';
+        shortLabel = 'DECLARE CURSOR\n' + (cursorName || tbl || '');
+      } else if (sqlOp === 'OPEN') {
+        // EXEC SQL OPEN cursor-name
+        let ocM = allSQL.match(/EXEC\s+SQL\s+OPEN\s+([A-Z][A-Z0-9_#@$-]*)/);
+        let cursorName = ocM ? ocM[1] : '';
+        sqlOpGroup = 'CURSOR-OPEN';
+        shortLabel = 'OPEN CURSOR\n' + cursorName;
+      } else if (sqlOp === 'FETCH') {
+        // EXEC SQL FETCH [NEXT FROM] cursor-name INTO ...
+        let ftM = allSQL.match(/FETCH\s+(?:NEXT\s+FROM\s+)?([A-Z][A-Z0-9_#@$-]*)/);
+        let cursorName = ftM ? ftM[1] : '';
+        sqlOpGroup = 'CURSOR-FETCH';
+        shortLabel = 'FETCH\n' + cursorName;
+      } else if (sqlOp === 'CLOSE') {
+        // EXEC SQL CLOSE cursor-name  (diferente de COBOL CLOSE arquivo)
+        let clM = allSQL.match(/EXEC\s+SQL\s+CLOSE\s+([A-Z][A-Z0-9_#@$-]*)/);
+        let cursorName = clM ? clM[1] : '';
+        sqlOpGroup = 'CURSOR-CLOSE';
+        shortLabel = 'CLOSE CURSOR\n' + cursorName;
+      // ── DML ──────────────────────────────────────────────────────────
+      } else if (sqlOp === 'SELECT') {
+        sqlOpGroup = 'SELECT';
+        let tblM = allSQL.match(/(?:FROM|JOIN)\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
+        let tbl = tblM ? tblM[1] : '';
+        shortLabel = 'SELECT' + (tbl ? '\n' + tbl : '');
+      } else if (sqlOp === 'INSERT') {
+        sqlOpGroup = 'INSERT';
+        let tblM = allSQL.match(/INSERT\s+INTO\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
+        let tbl = tblM ? tblM[1] : '';
+        shortLabel = 'INSERT' + (tbl ? '\n' + tbl : '');
+      } else if (sqlOp === 'UPDATE') {
+        sqlOpGroup = 'UPDATE';
+        let tblM = allSQL.match(/UPDATE\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
+        let tbl = tblM ? tblM[1] : '';
+        shortLabel = 'UPDATE' + (tbl ? '\n' + tbl : '');
+      } else if (sqlOp === 'DELETE') {
+        sqlOpGroup = 'DELETE';
+        let tblM = allSQL.match(/DELETE\s+(?:FROM\s+)?([A-Z][A-Z0-9_#@$.:-]*)/)
+                || allSQL.match(/FROM\s+([A-Z0-9][A-Z0-9_#@$.:-]*)/);
+        let tbl = tblM ? tblM[1] : '';
+        shortLabel = 'DELETE' + (tbl ? '\n' + tbl : '');
+      } else {
+        sqlOpGroup = 'OTHER';
+        shortLabel = sqlOp;
+      }
       let fullDetail = sqlLines.join('\n') + '\nEND-EXEC';
       nodes.push({ type: 'sql', label: shortLabel, sqlOp: sqlOpGroup, detail: fullDetail, srcLine: _srcLine });
       continue;
@@ -2585,8 +2705,179 @@ function buildAST(linhas, lineNums) {
       nodes.push({ type: 'goto', target: gotoM[1] });
       break;
     }
-    // Opera��es de I/O � s�mbolo de paralelogramo no fluxograma
-    if (/^(DISPLAY|ACCEPT|READ|WRITE|REWRITE|DELETE|OPEN|CLOSE)\b/.test(lUp)) {
+    // READ — multi-linha: AT END / NOT AT END / INVALID KEY / END-READ ou ponto
+    if (/^READ\b/.test(lUp)) {
+      let _readLbl   = l;
+      let _atEL = [], _notEL = [], _invKL = [];
+      let _atEN = [], _notEN = [], _invKN = [];
+      let _rBlk = null;   // 'atend' | 'notatend' | 'invalidkey'
+      let _rDone = false;
+      while (i < linhas.length && !_rDone) {
+        let _rtTr   = linhas[i].trim();
+        let _rtPer  = _rtTr.endsWith('.');
+        let _rtUp   = _rtTr.replace(/\.$/,'').toUpperCase();
+        let _rtLN   = lineNums ? lineNums[i] : null;
+        i++;
+        if (!_rtUp) { if (_rtPer) _rDone = true; continue; }
+        if (/^END-READ\b/.test(_rtUp)) { _rDone = true; break; }
+        let _aM  = _rtUp.match(/^AT\s+END\b(.*)/);
+        let _naM = _rtUp.match(/^NOT\s+AT\s+END\b(.*)/);
+        let _iM  = _rtUp.match(/^INVALID\s+KEY\b(.*)/);
+        let _niM = /^NOT\s+INVALID\s+KEY\b/.test(_rtUp);
+        let _kM  = _rtUp.match(/^KEY\s+IS\b(.*)/);
+        if (_aM) {
+          _rBlk = 'atend';
+          let _il = _aM[1].trim(); if (_il) { _atEL.push(_il); _atEN.push(_rtLN); }
+        } else if (_naM) {
+          _rBlk = 'notatend';
+          let _il = _naM[1].trim(); if (_il) { _notEL.push(_il); _notEN.push(_rtLN); }
+        } else if (_iM) {
+          _rBlk = 'invalidkey';
+          let _il = _iM[1].trim(); if (_il) { _invKL.push(_il); _invKN.push(_rtLN); }
+        } else if (_niM) {
+          _rBlk = 'notatend';
+        } else if (_kM) {
+          _readLbl += '\n' + _rtUp.replace(/\.$/, '');  _rBlk = null;
+        } else {
+          if      (_rBlk === 'atend')      { _atEL.push(_rtUp);  _atEN.push(_rtLN); }
+          else if (_rBlk === 'notatend')   { _notEL.push(_rtUp); _notEN.push(_rtLN); }
+          else if (_rBlk === 'invalidkey') { _invKL.push(_rtUp); _invKN.push(_rtLN); }
+        }
+        if (_rtPer) { _rDone = true; break; }
+      }
+      let _rdParts = [_readLbl];
+      if (_atEL.length)  { _rdParts.push('AT END');      _atEL.forEach(function(x){ _rdParts.push('    '+x); }); }
+      if (_notEL.length) { _rdParts.push('NOT AT END');  _notEL.forEach(function(x){ _rdParts.push('    '+x); }); }
+      if (_invKL.length) { _rdParts.push('INVALID KEY'); _invKL.forEach(function(x){ _rdParts.push('    '+x); }); }
+      _rdParts.push('END-READ');
+      nodes.push({
+        type: 'read',
+        label: _readLbl,
+        detail: _rdParts.join('\n'),
+        srcLine: _srcLine,
+        atEnd:      _atEL.length  ? buildAST(_atEL,  _atEN,  fdMap) : null,
+        notAtEnd:   _notEL.length ? buildAST(_notEL, _notEN, fdMap) : null,
+        invalidKey: _invKL.length ? buildAST(_invKL, _invKN, fdMap) : null,
+      });
+      continue;
+    }
+    // OPEN → bloco Preparação (trapézio) — abre arquivo para leitura/gravação
+    if (/^OPEN\b/.test(lUp)) {
+      // Coleta linhas de continuação de OPEN multi-linha (modo ou nome de arquivo)
+      let openLines = [l];
+      while (i < linhas.length) {
+        let nxt = linhas[i].trim().replace(/\.$/, '');
+        let nxtUp = nxt.toUpperCase();
+        // Para em linha vazia ou nova instrução (não é modo nem nome de arquivo)
+        if (!nxt || (!/^(INPUT|OUTPUT|I-O|EXTEND)\b/.test(nxtUp) && !/^[A-Z][A-Z0-9-]+$/.test(nxtUp))) break;
+        openLines.push(nxt);
+        i++;
+      }
+      nodes.push({ type: 'open', label: openLines.join('\n'), srcLine: _srcLine });
+      continue;
+    }
+    // CLOSE → bloco Terminador (oval) — fecha arquivo, finaliza processamento
+    if (/^CLOSE\b/.test(lUp)) {
+      // Coleta linhas de continuação de CLOSE multi-linha (apenas nomes de arquivo)
+      let closeLines = [l];
+      while (i < linhas.length) {
+        let nxt = linhas[i].trim().replace(/\.$/, '');
+        // Para em linha vazia ou token que não seja nome de arquivo simples
+        if (!nxt || !/^[A-Z][A-Z0-9-]+$/.test(nxt.toUpperCase())) break;
+        closeLines.push(nxt);
+        i++;
+      }
+      nodes.push({ type: 'close', label: closeLines.join('\n'), srcLine: _srcLine });
+      continue;
+    }
+    // CALL — chamada a subprograma estático ou dinâmico
+    if (/^CALL\b/.test(lUp)) {
+      // Extrai nome do programa: literal 'PROG' ou variável
+      var _callM     = lUp.match(/^CALL\s+(?:'([^']+)'|"([^"]+)"|(\S+))/);
+      var _callProg  = _callM ? (_callM[1] || _callM[2] || _callM[3] || '') : '';
+      var _callDyn   = !/^CALL\s+['"]/.test(lUp);  // true → dinâmico (variável)
+      var _callLines = [l];
+      var _usingParts = [];
+      var _excepL = [], _notExcepL = [];
+      var _excepN = [], _notExcepN = [];
+      var _cBlk   = null;  // 'exception' | 'notexception'
+      var _cDone  = false;
+      // Verbos que NÃO são continuação do CALL — ao encontrá-los fora de bloco, para
+      var _callBreakRe = /^(MOVE|COMPUTE|ADD|SUBTRACT|MULTIPLY|DIVIDE|IF\b|ELSE\b|EVALUATE|PERFORM|OPEN|CLOSE|READ|WRITE|REWRITE|DELETE|STRING|UNSTRING|INSPECT|SEARCH|SORT|DISPLAY|ACCEPT|INITIALIZE|SET|GO\s+TO|GOTO|STOP\s+RUN|GOBACK|EXIT\b|EXEC\b)/;
+      while (i < linhas.length && !_cDone) {
+        var _cRaw = linhas[i].trim();
+        var _cPer = _cRaw.endsWith('.');
+        var _cUp  = _cRaw.replace(/\.$/, '').toUpperCase();
+        var _cLN  = lineNums ? lineNums[i] : null;
+        if (!_cUp) { i++; if (_cPer) _cDone = true; continue; }
+        if (/^END-CALL\b/.test(_cUp)) { i++; _cDone = true; break; }
+        // Se estamos fora dos blocos ON/NOT ON EXCEPTION e a linha é um novo verbo → para sem consumir
+        if (_cBlk === null && _callBreakRe.test(_cUp)) { _cDone = true; break; }
+        i++;
+        var _onExM  = _cUp.match(/^ON\s+EXCEPTION\b(.*)?/);
+        var _notExM = _cUp.match(/^NOT\s+ON\s+EXCEPTION\b(.*)?/);
+        if (_onExM) {
+          _cBlk = 'exception';
+          var _il = (_onExM[1] || '').trim(); if (_il) { _excepL.push(_il); _excepN.push(_cLN); }
+        } else if (_notExM) {
+          _cBlk = 'notexception';
+          var _il = (_notExM[1] || '').trim(); if (_il) { _notExcepL.push(_il); _notExcepN.push(_cLN); }
+        } else if (_cBlk === 'exception') {
+          _excepL.push(_cRaw.replace(/\.$/, '')); _excepN.push(_cLN);
+        } else if (_cBlk === 'notexception') {
+          _notExcepL.push(_cRaw.replace(/\.$/, '')); _notExcepN.push(_cLN);
+        } else {
+          // linha de continuação válida: USING, BY CONTENT/REFERENCE/VALUE, nome de variável
+          var _uM = _cUp.match(/\bUSING\b(.*)/);
+          if (_uM) { var _ut = _uM[1].trim(); if (_ut) _usingParts.push(_ut); }
+          else if (/^BY\s+(CONTENT|REFERENCE|VALUE)\b/.test(_cUp)) { /* ignora — só cláusula */ }
+          else { _usingParts.push(_cUp); }
+          _callLines.push(_cRaw);
+        }
+        if (_cPer && _cBlk === null) { _cDone = true; break; }  // ponto fora de bloco fecha
+      }
+      // Label: CALL 'PROG' ou CALL VAR (dinâmico)
+      var _callShort = 'CALL \'' + _callProg + '\''
+      if (_callDyn) _callShort = 'CALL ' + _callProg + '\n(dinâmico)';
+      if (_usingParts.length) _callShort += '\nUSING ' + _usingParts.join(' ');
+      var _callDetail = _callLines.join('\n');
+      if (_excepL.length || _notExcepL.length) _callDetail += '\n...';
+      nodes.push({
+        type: 'call',
+        label: _callShort,
+        callProg: _callProg,
+        callDynamic: _callDyn,
+        usingStr: _usingParts.join(' '),
+        detail: _callDetail,
+        srcLine: _srcLine,
+        onException:    _excepL.length    ? buildAST(_excepL,    _excepN,    fdMap) : null,
+        notOnException: _notExcepL.length ? buildAST(_notExcepL, _notExcepN, fdMap) : null,
+      });
+      continue;
+    }
+    // WRITE / REWRITE — identifica arquivo via fdMap
+    if (/^(WRITE|REWRITE)\b/.test(lUp)) {
+      var _verb = /^REWRITE\b/.test(lUp) ? 'REWRITE' : 'WRITE';
+      var _regM = lUp.match(/^(?:WRITE|REWRITE)\s+([A-Z][A-Z0-9-]*)/);
+      var _reg  = _regM ? _regM[1] : '';
+      var _file = fdMap[_reg] || _reg;
+      var _wLines = [l];
+      while (i < linhas.length) {
+        var _wRaw = linhas[i].trim();
+        var _wUp  = _wRaw.replace(/\.$/, '').toUpperCase();
+        if (/^END-WRITE\b/.test(_wUp)) { i++; break; }
+        if (/^(FROM|AFTER|BEFORE|ADVANCING|INVALID|NOT|AT|END|WITH|LINES?)\b/.test(_wUp)) {
+          _wLines.push(_wRaw); i++;
+        } else { break; }
+        if (_wRaw.endsWith('.')) break;
+      }
+      var _wLabel  = _verb + '\n' + _file;
+      var _wDetail = _wLines.join('\n');
+      nodes.push({ type: 'write', label: _wLabel, writeVerb: _verb, fileName: _file, regName: _reg, detail: _wDetail, srcLine: _srcLine });
+      continue;
+    }
+    // Demais operações de I/O → paralelogramo (DISPLAY, ACCEPT, DELETE…)
+    if (/^(DISPLAY|ACCEPT|DELETE)\b/.test(lUp)) {
       nodes.push({ type: 'io', label: l, srcLine: _srcLine });
       continue;
     }
@@ -2705,9 +2996,67 @@ function renderNode(n, els, uid, meta, cs, depth) {
     return [id, id];
   }
 
+  if (n.type === 'read') {
+    let readId = uid('io');
+    els.push({ data: { id: readId, label: n.label, tipo: 'io', detail: n.detail || n.label,
+                       col: _col(), para: meta.currentPara || '',
+                       srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    let _hasRBlocks = n.atEnd || n.notAtEnd || n.invalidKey;
+    if (!_hasRBlocks) return [readId, readId];
+    // Nó de decisão: AT END? ou INVALID KEY?
+    let _useInv  = !!(n.invalidKey && n.invalidKey.length);
+    let eofDecId = uid('if');
+    let eofLbl   = _useInv ? 'INVALID\nKEY?' : 'AT END?';
+    els.push({ data: { id: eofDecId, label: eofLbl, tipo: 'if', col: _col(), para: meta.currentPara || '' } });
+    els.push({ data: { source: readId, target: eofDecId } });
+    let mRId = uid('mg');
+    els.push({ data: { id: mRId, label: '', tipo: 'merge', col: _col() } });
+    meta._ifDepth = (meta._ifDepth || 0) + 1;
+    // Ramo SIM: AT END ou INVALID KEY
+    let _simBR = _useInv ? n.invalidKey : (n.atEnd || []);
+    if (_simBR && _simBR.length) {
+      let [rsf, rsl] = renderSeq(_simBR, els, uid, meta, cs, depth);
+      if (rsf) {
+        els.push({ data: { source: eofDecId, target: rsf, label: _useInv ? 'Inválida' : 'EOF' } });
+        els.push({ data: { source: rsl || rsf, target: mRId } });
+      } else {
+        els.push({ data: { source: eofDecId, target: mRId, label: _useInv ? 'Inválida' : 'EOF' } });
+      }
+    } else {
+      els.push({ data: { source: eofDecId, target: mRId, label: _useInv ? 'Inválida' : 'EOF' } });
+    }
+    // Ramo NÃO: NOT AT END ou continua
+    let _naoBR = n.notAtEnd || [];
+    if (_naoBR.length) {
+      let [rnf, rnl] = renderSeq(_naoBR, els, uid, meta, cs, depth);
+      if (rnf) {
+        els.push({ data: { source: eofDecId, target: rnf, label: 'Continua' } });
+        els.push({ data: { source: rnl || rnf, target: mRId } });
+      } else {
+        els.push({ data: { source: eofDecId, target: mRId, label: 'Continua' } });
+      }
+    } else {
+      els.push({ data: { source: eofDecId, target: mRId, label: 'Continua' } });
+    }
+    meta._ifDepth--;
+    return [readId, mRId];
+  }
+
   if (n.type === 'io') {
     let id = uid('io');
     els.push({ data: { id, label: n.label, tipo: 'io', col: _col(), para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    return [id, id];
+  }
+
+  if (n.type === 'open') {
+    let id = uid('open');
+    els.push({ data: { id, label: n.label, tipo: 'open', col: _col(), para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    return [id, id];
+  }
+
+  if (n.type === 'close') {
+    let id = uid('close');
+    els.push({ data: { id, label: n.label, tipo: 'close', col: _col(), para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
     return [id, id];
   }
 
@@ -2769,7 +3118,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
       let secDireto = estrutura[target] || [];
       if (secDireto.length > 0) {
         meta.currentCol = _newCol;
-        let [sfc, slc] = renderSeq(buildAST(secDireto), els, uid, meta, ns, depth + 1);
+        let [sfc, slc] = renderSeq(buildAST(secDireto, meta.lineNumMap ? meta.lineNumMap[target] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
         if (sfc) els.push({ data: { source: last, target: sfc } });
         if (slc) last = slc;
       }
@@ -2781,7 +3130,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
         let pid = uid('sp');
         els.push({ data: { id: pid, label: par, tipo: 'section-para', target: par, col: _parCol } });
         els.push({ data: { source: last, target: pid } });
-        let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null), els, uid, meta, ns, depth + 1);
+        let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
         if (fc) els.push({ data: { source: pid, target: fc } });
         last = lc || pid;
       });
@@ -2789,7 +3138,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
       return [id, last];
     } else {
       meta.currentPara = target;
-      let [fc, lc] = renderSeq(buildAST(estrutura[target] || [], meta.lineNumMap ? meta.lineNumMap[target] : null), els, uid, meta, ns, depth + 1);
+      let [fc, lc] = renderSeq(buildAST(estrutura[target] || [], meta.lineNumMap ? meta.lineNumMap[target] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
       meta.currentCol = _callerCol;
       meta.currentPara = _callerPara;
       if (fc) els.push({ data: { source: id, target: fc } });
@@ -2819,7 +3168,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
       let pid = uid('p');
       els.push({ data: { id: pid, label: par, tipo: 'perform-fall', target: par, col: _parColThru } });
       els.push({ data: { source: last, target: pid } });
-      let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null), els, uid, meta, ns, depth + 1);
+      let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
       if (fc) els.push({ data: { source: pid, target: fc } });
       last = lc || pid;
     });
@@ -2852,7 +3201,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
         // Corpo do loop fica inline na mesma coluna do n� loop
         meta.currentCol = _loopCol;
         let ns = new Set(cs); ns.add(target);
-        let [fc, lc] = renderSeq(buildAST(estrutura[target] || [], meta.lineNumMap ? meta.lineNumMap[target] : null), els, uid, meta, ns, depth + 1);
+        let [fc, lc] = renderSeq(buildAST(estrutura[target] || [], meta.lineNumMap ? meta.lineNumMap[target] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
         meta.currentCol = _loopCol;
         if (fc) els.push({ data: { source: pid, target: fc } });
         bodyLast = lc || pid;
@@ -2864,9 +3213,42 @@ function renderNode(n, els, uid, meta, cs, depth) {
   }
 
   if (n.type === 'evaluate') {
-    let id = uid('ev');
-    els.push({ data: { id, label: n.label, tipo: 'evaluate', col: _col() } });
-    return [id, id];
+    // Label compacto: extrai variável/expressão após EVALUATE
+    let _evLbl = n.label.replace(/^EVALUATE\s+/i, 'EVALUATE\n');
+    let _evCol = _col();
+    let evId = uid('ev');
+    els.push({ data: { id: evId, label: _evLbl, tipo: 'evaluate',
+                       detail: n.detail || n.label,
+                       col: _evCol, para: meta.currentPara || '',
+                       srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    let _whens = n.whens || [];
+    if (!_whens.length) return [evId, evId];
+    // Nó de merge — todos os ramos convergem aqui, na mesma coluna do losango
+    let mEvId = uid('mg');
+    els.push({ data: { id: mEvId, label: '', tipo: 'merge', col: _evCol } });
+    meta._ifDepth = (meta._ifDepth || 0) + 1;
+    let _savedCol = meta.currentCol;
+    // Passa depth+1 para que PERFORMs dentro de WHEN não aloquem novas colunas
+    // (coluna nova só é alocada quando depth===0; com depth+1 expande normalmente sem bagunça)
+    _whens.forEach(function(w) {
+      meta.currentCol = _evCol;
+      let _wLbl = w.label.replace(/^WHEN\s+/i, '').trim() || w.label;
+      if (_wLbl.toUpperCase() === 'OTHER') _wLbl = 'OUTRO';
+      if (w.nodes && w.nodes.length) {
+        let [wf, wl] = renderSeq(w.nodes, els, uid, meta, cs, depth + 1);
+        if (wf) {
+          els.push({ data: { source: evId, target: wf, label: _wLbl } });
+          els.push({ data: { source: wl || wf, target: mEvId } });
+        } else {
+          els.push({ data: { source: evId, target: mEvId, label: _wLbl } });
+        }
+      } else {
+        els.push({ data: { source: evId, target: mEvId, label: _wLbl } });
+      }
+    });
+    meta.currentCol = _savedCol;
+    meta._ifDepth--;
+    return [evId, mEvId];
   }
 
   if (n.type === 'goto') {
@@ -2875,9 +3257,57 @@ function renderNode(n, els, uid, meta, cs, depth) {
     return [id, id];
   }
 
+  if (n.type === 'call') {
+    let callId = uid('call');
+    els.push({ data: { id: callId, label: n.label, tipo: 'call', callDynamic: n.callDynamic ? 'true' : 'false',
+                       col: _col(), detail: n.detail || n.label, para: meta.currentPara || '',
+                       srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    let _hasBlocks = n.onException || n.notOnException;
+    if (!_hasBlocks) return [callId, callId];
+    // Nó de decisão ON EXCEPTION?
+    let _cDecId = uid('if');
+    els.push({ data: { id: _cDecId, label: 'ON\nEXCEPTION?', tipo: 'if', col: _col(), para: meta.currentPara || '' } });
+    els.push({ data: { source: callId, target: _cDecId } });
+    let mCId = uid('mg');
+    els.push({ data: { id: mCId, label: '', tipo: 'merge', col: _col() } });
+    meta._ifDepth = (meta._ifDepth || 0) + 1;
+    // Ramo EXCEPTION (SIM)
+    if (n.onException && n.onException.length) {
+      let [ef, el_] = renderSeq(n.onException, els, uid, meta, cs, depth);
+      if (ef) {
+        els.push({ data: { source: _cDecId, target: ef, label: 'Exceção' } });
+        els.push({ data: { source: el_ || ef, target: mCId } });
+      } else {
+        els.push({ data: { source: _cDecId, target: mCId, label: 'Exceção' } });
+      }
+    } else {
+      els.push({ data: { source: _cDecId, target: mCId, label: 'Exceção' } });
+    }
+    // Ramo NOT ON EXCEPTION (NÃO)
+    if (n.notOnException && n.notOnException.length) {
+      let [nef, nel] = renderSeq(n.notOnException, els, uid, meta, cs, depth);
+      if (nef) {
+        els.push({ data: { source: _cDecId, target: nef, label: 'OK' } });
+        els.push({ data: { source: nel || nef, target: mCId } });
+      } else {
+        els.push({ data: { source: _cDecId, target: mCId, label: 'OK' } });
+      }
+    } else {
+      els.push({ data: { source: _cDecId, target: mCId, label: 'OK' } });
+    }
+    meta._ifDepth--;
+    return [callId, mCId];
+  }
+
+  if (n.type === 'write') {
+    let id = uid('writ');
+    els.push({ data: { id, label: n.label, tipo: 'write', writeVerb: n.writeVerb || 'WRITE', col: _col(), detail: n.detail || null, para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    return [id, id];
+  }
+
   if (n.type === 'sql') {
     let id = uid('sql');
-    els.push({ data: { id, label: n.label, tipo: 'sql', sqlOp: n.sqlOp || 'OTHER', col: _col(), detail: n.detail || null } });
+    els.push({ data: { id, label: n.label, tipo: 'sql', sqlOp: n.sqlOp || 'OTHER', col: _col(), detail: n.detail || null, para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
     return [id, id];
   }
 
@@ -2974,7 +3404,7 @@ function gerarFluxo(estrutura, tipos, secoes, meta) {
     let secDiretoMain = estrutura[main] || [];
     if (secDiretoMain.length > 0) {
       meta.currentCol = 0;
-      let [sfc, slc] = renderSeq(buildAST(secDiretoMain, meta.lineNumMap ? meta.lineNumMap[main] : null), els, uid, meta, ns, 0);
+      let [sfc, slc] = renderSeq(buildAST(secDiretoMain, meta.lineNumMap ? meta.lineNumMap[main] : null, meta.fdMap), els, uid, meta, ns, 0);
       if (sfc) els.push({ data: { source: last, target: sfc } });
       if (slc) last = slc;
     }
@@ -2988,13 +3418,13 @@ function gerarFluxo(estrutura, tipos, secoes, meta) {
       els.push({ data: { source: last, target: pid } });
       let nsLocal = new Set(ns);
       nsLocal.add(par);
-      let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null), els, uid, meta, nsLocal, 0);
+      let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null, meta.fdMap), els, uid, meta, nsLocal, 0);
       if (fc) els.push({ data: { source: pid, target: fc } });
       last = lc || pid;
     });
     meta.currentCol = 0;
   } else {
-    let [fc] = renderSeq(buildAST(estrutura[main] || [], meta.lineNumMap ? meta.lineNumMap[main] : null), els, uid, meta, new Set([main]), 0);
+    let [fc] = renderSeq(buildAST(estrutura[main] || [], meta.lineNumMap ? meta.lineNumMap[main] : null, meta.fdMap), els, uid, meta, new Set([main]), 0);
     if (fc) els.push({ data: { source: entryId, target: fc } });
   }
 
@@ -3071,7 +3501,7 @@ function desenhar(elements, meta) {
           'border-style': 'solid',
           'background-color': '#d4edda',
           'color': '#1b4332',
-          'font-weight': '700'
+          'font-weight': 700
         }
       },
       /* -- PAR�GRAFOS / SE��ES (n�s de chamada) -- */
@@ -3084,7 +3514,7 @@ function desenhar(elements, meta) {
           'border-width': 0,
           'color': '#ffffff',
           'font-size': '12px',
-          'font-weight': '700',
+          'font-weight': 700,
           'width': 175,
           'height': 40
         }
@@ -3098,7 +3528,7 @@ function desenhar(elements, meta) {
           'border-width': 0,
           'color': '#ffffff',
           'font-size': '12px',
-          'font-weight': '700',
+          'font-weight': 700,
           'width': 175,
           'height': 40
         }
@@ -3198,7 +3628,7 @@ function desenhar(elements, meta) {
           'font-weight': '600'
         }
       },
-      /* -- I/O -- */
+      /* -- I/O (DISPLAY / ACCEPT — genérico) -- */
       {
         selector: 'node[tipo="io"]',
         style: {
@@ -3215,6 +3645,86 @@ function desenhar(elements, meta) {
           'text-max-width': '176px'
         }
       },
+      /* -- WRITE / REWRITE — gravação em arquivo sequencial -- */
+      {
+        selector: 'node[tipo="write"]',
+        style: {
+          'shape': 'rhomboid',
+          'background-color': '#fef9c3',
+          'border-color': '#ca8a04',
+          'border-width': 2,
+          'color': '#78350f',
+          'font-size': '11px',
+          'font-weight': 700,
+          'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
+          'width': 195,
+          'height': 52,
+          'text-wrap': 'wrap',
+          'text-max-width': '176px'
+        }
+      },
+      { selector: 'node[tipo="write"][writeVerb="REWRITE"]',
+        style: { 'background-color': '#fdf4ff', 'border-color': '#9333ea', 'color': '#4a044e' } },
+      /* -- CALL — subprograma (processo pré-definido: bordas duplas) -- */
+      {
+        selector: 'node[tipo="call"]',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': '#eff6ff',
+          'border-color': '#1d4ed8',
+          'border-width': 3,
+          'color': '#1e3a8a',
+          'font-size': '11px',
+          'font-weight': 700,
+          'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
+          'width': 195,
+          'min-height': 48,
+          'padding': '10px',
+          'text-wrap': 'wrap',
+          'text-max-width': '176px',
+          'border-style': 'double'
+        }
+      },
+      { selector: 'node[tipo="call"][callDynamic="true"]',
+        style: { 'background-color': '#f0fdf4', 'border-color': '#15803d', 'color': '#14532d' } },
+      /* -- OPEN (Preparação — octógono/cut-rectangle) -- */
+      {
+        selector: 'node[tipo="open"]',
+        style: {
+          'shape': 'cut-rectangle',
+          'background-color': '#e0f2f1',
+          'border-color': '#00695c',
+          'border-width': 2.5,
+          'color': '#004d40',
+          'font-size': '11px',
+          'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
+          'font-weight': 700,
+          'width': 195,
+          'min-height': 44,
+          'padding': '12px',
+          'text-wrap': 'wrap',
+          'text-max-width': '172px'
+        }
+      },
+      /* -- CLOSE (Terminador — ellipse/oval) -- */
+      {
+        selector: 'node[tipo="close"]',
+        style: {
+          'shape': 'ellipse',
+          'background-color': '#fce4ec',
+          'border-color': '#880e4f',
+          'border-width': 2.5,
+          'color': '#4a0022',
+          'font-size': '11px',
+          'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
+          'font-weight': 700,
+          'width': 195,
+          'min-height': 44,
+          'padding': '12px',
+          'text-wrap': 'wrap',
+          'text-max-width': '172px'
+        }
+      },
       /* -- STOP / GOBACK -- */
       {
         selector: 'node[tipo="stop"]',
@@ -3224,7 +3734,7 @@ function desenhar(elements, meta) {
           'border-color': '#7f1d1d',
           'border-width': 0,
           'color': '#fef2f2',
-          'font-weight': '700',
+          'font-weight': 700,
           'width': 170,
           'height': 36
         }
@@ -3244,19 +3754,223 @@ function desenhar(elements, meta) {
       {
         selector: 'node[tipo="evaluate"]',
         style: {
-          'shape': 'round-rectangle',
+          'shape': 'diamond',
           'background-color': '#fdf2f8',
           'border-color': '#a21caf',
-          'border-width': 2,
-          'border-style': 'dashed',
+          'border-width': 2.5,
           'color': '#701a75',
-          'font-size': '11px',
-          'width': 185,
-          'height': 42,
-          'text-wrap': 'ellipsis',
-          'text-max-width': '170px'
+          'font-size': '10px',
+          'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
+          'font-weight': 700,
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 190,
+          'height': 80
         }
       },
+      /* =================== MACRO-FLUXO =================== */
+      /* -- Início/Fim do programa -- */
+      {
+        selector: 'node[tipo="macro-start"], node[tipo="macro-end"]',
+        style: {
+          'shape': 'round-rectangle',
+          'border-width': 3,
+          'font-size': '12px',
+          'font-weight': 700,
+          'text-wrap': 'wrap',
+          'text-max-width': '160px',
+          'width': 180,
+          'height': 44
+        }
+      },
+      {
+        selector: 'node[tipo="macro-start"]',
+        style: {
+          'background-color': '#e8f5e9',
+          'border-color': '#2e7d32',
+          'color': '#1b5e20'
+        }
+      },
+      {
+        selector: 'node[tipo="macro-end"]',
+        style: {
+          'background-color': '#fce4ec',
+          'border-color': '#880e4f',
+          'color': '#4a0d27'
+        }
+      },
+      /* -- Parágrafos/seções no macro-fluxo (retângulo azul) -- */
+      {
+        selector: 'node[tipo="macro-process"]',
+        style: {
+          'shape': 'rectangle',
+          'background-color': '#e3f2fd',
+          'border-color': '#1565c0',
+          'border-width': 2,
+          'color': '#0d2b6e',
+          'font-size': '11px',
+          'font-weight': 700,
+          'text-wrap': 'wrap',
+          'text-max-width': '160px',
+          'width': 180,
+          'height': 48
+        }
+      },
+      /* -- Arquivo de entrada: 'tag' = documento com aba, estilo arquivo legado -- */
+      {
+        selector: 'node[tipo="macro-file-in"]',
+        style: {
+          'shape': 'tag',
+          'background-color': '#e0f7fa',
+          'border-color': '#006064',
+          'border-width': 2.5,
+          'color': '#004d56',
+          'font-size': '12px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Arquivo de saída: mesma forma tag, cor laranja -- */
+      {
+        selector: 'node[tipo="macro-file-out"]',
+        style: {
+          'shape': 'tag',
+          'background-color': '#fff8e1',
+          'border-color': '#e65100',
+          'border-width': 2.5,
+          'color': '#7a2800',
+          'font-size': '12px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Arquivo I-O: tag roxo (leitura e escrita) -- */
+      {
+        selector: 'node[tipo="macro-file-io"]',
+        style: {
+          'shape': 'tag',
+          'background-color': '#f3e5f5',
+          'border-color': '#6a1b9a',
+          'border-width': 2.5,
+          'color': '#380060',
+          'font-size': '12px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Seção de I/O no macro-fluxo (cabeçalho de grupo) -- */
+      {
+        selector: 'node[tipo="macro-io-hdr"]',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': '#f1f5fd',
+          'border-color': '#90a4ae',
+          'border-width': 1.5,
+          'border-style': 'dashed',
+          'color': '#37474f',
+          'font-size': '10px',
+          'font-style': 'italic',
+          'text-wrap': 'wrap',
+          'text-max-width': '140px',
+          'width': 160,
+          'height': 36
+        }
+      },
+      /* -- Tabela de entrada (SELECT) = cilindro azul -- */
+      {
+        selector: 'node[tipo="macro-table-in"]',
+        style: {
+          'shape': 'barrel',
+          'background-color': '#e3f2fd',
+          'border-color': '#1565c0',
+          'border-width': 2.5,
+          'color': '#0d2b6e',
+          'font-size': '11px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Tabela de saída (INSERT/UPDATE/DELETE) = cilindro vermelho -- */
+      {
+        selector: 'node[tipo="macro-table-out"]',
+        style: {
+          'shape': 'barrel',
+          'background-color': '#fce4ec',
+          'border-color': '#c62828',
+          'border-width': 2.5,
+          'color': '#7f0000',
+          'font-size': '11px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Tabela de entrada (SELECT) = cilindro azul -- */
+      {
+        selector: 'node[tipo="macro-table-in"]',
+        style: {
+          'shape': 'barrel',
+          'background-color': '#e3f2fd',
+          'border-color': '#1565c0',
+          'border-width': 2.5,
+          'color': '#0d2b6e',
+          'font-size': '11px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      /* -- Tabela de saída (INSERT/UPDATE/DELETE) = cilindro vermelho -- */
+      {
+        selector: 'node[tipo="macro-table-out"]',
+        style: {
+          'shape': 'barrel',
+          'background-color': '#fce4ec',
+          'border-color': '#c62828',
+          'border-width': 2.5,
+          'color': '#7f0000',
+          'font-size': '11px',
+          'font-weight': 700,
+          'text-halign': 'center',
+          'text-valign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '130px',
+          'width': 150,
+          'height': 60
+        }
+      },
+      { selector: 'node[tipo="macro-table-out"][tableOp="INSERT"]', style: { 'background-color': '#e8f5e9', 'border-color': '#2e7d32', 'color': '#1b5e20' } },
+      { selector: 'node[tipo="macro-table-out"][tableOp="UPDATE"]', style: { 'background-color': '#fff8e1', 'border-color': '#f57f17', 'color': '#e65100' } },
+      { selector: 'node[tipo="macro-table-out"][tableOp="DELETE"]', style: { 'background-color': '#fce4ec', 'border-color': '#c62828', 'color': '#7f0000' } },
+      /* =================== FIM MACRO-FLUXO =================== */
       /* -- GO TO -- */
       {
         selector: 'node[tipo="goto"]',
@@ -3267,7 +3981,7 @@ function desenhar(elements, meta) {
           'border-width': 0,
           'color': '#e9d5ff',
           'font-size': '11.5px',
-          'font-weight': '700',
+          'font-weight': 700,
           'font-family': 'Segoe UI, Arial, sans-serif',
           'width': 185,
           'height': 38
@@ -3283,7 +3997,7 @@ function desenhar(elements, meta) {
           'border-width': 1,
           'color': '#e2e8f0',
           'font-size': '11px',
-          'font-weight': '700',
+          'font-weight': 700,
           'font-family': 'Cascadia Code, Fira Code, Consolas, monospace',
           'width': 185,
           'height': 68,
@@ -3291,10 +4005,15 @@ function desenhar(elements, meta) {
           'text-max-width': '172px'
         }
       },
-      { selector: 'node[tipo="sql"][sqlOp="SELECT"]', style: { 'background-color': '#1d4ed8', 'border-color': '#1e3a8a' } },
-      { selector: 'node[tipo="sql"][sqlOp="INSERT"]', style: { 'background-color': '#15803d', 'border-color': '#14532d' } },
-      { selector: 'node[tipo="sql"][sqlOp="UPDATE"]', style: { 'background-color': '#c2410c', 'border-color': '#7c2d12' } },
-      { selector: 'node[tipo="sql"][sqlOp="DELETE"]', style: { 'background-color': '#b91c1c', 'border-color': '#7f1d1d' } },
+      { selector: 'node[tipo="sql"][sqlOp="SELECT"]',        style: { 'background-color': '#1d4ed8', 'border-color': '#1e3a8a' } },
+      { selector: 'node[tipo="sql"][sqlOp="INSERT"]',        style: { 'background-color': '#15803d', 'border-color': '#14532d' } },
+      { selector: 'node[tipo="sql"][sqlOp="UPDATE"]',        style: { 'background-color': '#c2410c', 'border-color': '#7c2d12' } },
+      { selector: 'node[tipo="sql"][sqlOp="DELETE"]',        style: { 'background-color': '#b91c1c', 'border-color': '#7f1d1d' } },
+      /* -- Cursor SQL: DECLARE / OPEN / FETCH / CLOSE -- */
+      { selector: 'node[tipo="sql"][sqlOp="CURSOR-DECLARE"]', style: { 'background-color': '#5b21b6', 'border-color': '#3b0764', 'color': '#ede9fe' } },
+      { selector: 'node[tipo="sql"][sqlOp="CURSOR-OPEN"]',    style: { 'background-color': '#0e7490', 'border-color': '#164e63', 'color': '#cffafe' } },
+      { selector: 'node[tipo="sql"][sqlOp="CURSOR-FETCH"]',   style: { 'background-color': '#92400e', 'border-color': '#78350f', 'color': '#fef3c7' } },
+      { selector: 'node[tipo="sql"][sqlOp="CURSOR-CLOSE"]',   style: { 'background-color': '#374151', 'border-color': '#1f2937', 'color': '#f3f4f6' } },
       /* -- ARESTAS -- */
       {
         selector: 'edge',
@@ -3310,7 +4029,7 @@ function desenhar(elements, meta) {
           'label': 'data(label)',
           'font-size': '10.5px',
           'font-family': 'Segoe UI, Arial, sans-serif',
-          'font-weight': '700',
+          'font-weight': 700,
           'color': '#b45309',
           'text-background-color': '#fffbeb',
           'text-background-opacity': 1,
@@ -3340,8 +4059,11 @@ function desenhar(elements, meta) {
   // Para modo horizontal: primeiro ajusta loops (em TB), depois rotaciona tudo 90�.
   // Para demais modos: apenas ajusta loops no eixo vertical.
   var _layoutModo = ((document.getElementById('layout-select') || {}).value || 'tb');
-  if (_layoutModo === 'lr') {
-    aplicarPosLayoutLoop(); // ajusta loops em TB antes de separar colunas
+  var _isMacro    = ((document.getElementById('view-select')   || {}).value === 'macro');
+  if (_isMacro) {
+    aplicarLayoutMacro();
+  } else if (_layoutModo === 'lr') {
+    aplicarPosLayoutLoop();
     aplicarLayoutColunas();
   } else {
     aplicarPosLayoutLoop();
@@ -3420,8 +4142,19 @@ function desenhar(elements, meta) {
       el.innerText = montarDetalhe(data.target, meta);
     } else if (data.tipo === 'instrucao' || data.tipo === 'grupo' || data.tipo === 'if' || data.tipo === 'stop'
             || data.tipo === 'loop'     || data.tipo === 'io'   || data.tipo === 'evaluate'
-            || data.tipo === 'goto'     || data.tipo === 'sql') {
+            || data.tipo === 'goto'     || data.tipo === 'sql'  || data.tipo === 'write'
+            || data.tipo === 'call'
+            || data.tipo === 'open'     || data.tipo === 'close') {
       el.innerText = data.detail || data.label || '';
+    } else if (data.tipo && data.tipo.startsWith('macro-')) {
+      // Nós do macro-fluxo: mostra info do arquivo/parágrafo
+      if (data.fileName) {
+        el.innerText = 'Arquivo: ' + data.fileName + '\nModo: ' + (data.fileMode || '?');
+      } else if (data.para) {
+        el.innerText = montarDetalhe(data.para, meta);
+      } else {
+        el.innerText = data.label || '';
+      }
     } else {
       el.innerHTML = '<span style="color:#aaa;font-size:11px;">Clique em um nó para ver detalhes</span>';
     }
@@ -3444,6 +4177,228 @@ function desenhar(elements, meta) {
       if (window._resetLastPara) window._resetLastPara();
     }
   });
+}
+
+// ================= MACRO-FLUXO =================
+// Gera um diagrama de alto nível mostrando:
+//   arquivos de entrada → sequência de parágrafos principais → arquivos de saída
+function gerarMacroFluxo(meta) {
+  var estrutura       = meta.estrutura;
+  var tipos           = meta.tipos;
+  var ordemParagrafos = meta.ordemParagrafos;
+  if (!ordemParagrafos || !ordemParagrafos.length) return [];
+
+  // ── 1. Coletar arquivos abertos em todo o PROCEDURE DIVISION
+  // Mapa: nome-arquivo → 'INPUT' | 'OUTPUT' | 'I-O' | 'EXTEND'
+  var fileMap   = {};  // nome → modo final
+  var fileOrder = [];  // preserva ordem de aparição
+
+  ordemParagrafos.forEach(function(nome) {
+    if (tipos[nome] === 'fim-paragrafo') return;
+    var linhasP = estrutura[nome] || [];
+    for (var li = 0; li < linhasP.length; li++) {
+      var up0 = linhasP[li].trim().toUpperCase().replace(/\.$/, '');
+      if (!/^OPEN\b/.test(up0)) continue;
+      // Coleta tokens desta linha + linhas de continuação
+      var allParts = up0.replace(/^OPEN\s+/, '').split(/\s+/);
+      li++;
+      while (li < linhasP.length) {
+        var nxtUp = linhasP[li].trim().toUpperCase().replace(/\.$/, '');
+        if (!nxtUp || (!/^(INPUT|OUTPUT|I-O|EXTEND)\b/.test(nxtUp) && !/^[A-Z][A-Z0-9-]+$/.test(nxtUp))) break;
+        allParts = allParts.concat(nxtUp.split(/\s+/));
+        li++;
+      }
+      li--; // o for irá incrementar
+      var mode = null;
+      allParts.forEach(function(tok) {
+        if (tok === 'INPUT' || tok === 'OUTPUT' || tok === 'I-O' || tok === 'EXTEND') {
+          mode = tok;
+        } else if (mode && /^[A-Z][A-Z0-9-]*$/.test(tok)) {
+          if (!fileMap[tok]) {
+            fileMap[tok] = mode;
+            fileOrder.push(tok);
+          }
+        }
+      });
+    }
+  });
+
+  // ── 1b. Coletar tabelas SQL de todos os parágrafos
+  //    SELECT / DECLARE CURSOR → entrada (col 0)  |  INSERT/UPDATE/DELETE → saída (col 2)
+  var tableIn       = {};
+  var tableInOrder  = [];
+  var tableInParaList = {};  // tbl → [parágrafos que lêem]
+  // saída: um registro por (parágrafo × tabela × operação) — cada um gera bloco separado
+  var tableOutWriters = [];  // [{tbl, op, para}, ...]
+  var tableOutSeen    = {};  // "para|tbl|op" → true  (dedup)
+  ordemParagrafos.forEach(function(nome) {
+    if (tipos[nome] === 'fim-paragrafo') return;
+    var paraText = (estrutura[nome] || []).join(' ').toUpperCase();
+    var sqlRe = /EXEC\s+SQL\s+([\s\S]*?)END-EXEC/g;
+    var m;
+    while ((m = sqlRe.exec(paraText)) !== null) {
+      var body = m[1].replace(/\s+/g, ' ').trim();
+      var opM = body.match(/^([A-Z]+)/);
+      var sqlOp = opM ? opM[1] : '';
+      var tbl = '';
+      var tM;
+      var _wk;
+
+      if (sqlOp === 'SELECT') {
+        tM = body.match(/\bFROM\s+([A-Z][A-Z0-9_#@$.]*)/);
+        if (!tM) tM = body.match(/\bJOIN\s+([A-Z][A-Z0-9_#@$.]*)/);
+        tbl = tM ? tM[1] : '';
+        if (tbl) {
+          if (!tableIn[tbl]) { tableIn[tbl] = true; tableInOrder.push(tbl); tableInParaList[tbl] = []; }
+          tableInParaList[tbl].push(nome);
+        }
+
+      } else if (sqlOp === 'DECLARE' && /\bCURSOR\b/.test(body)) {
+        tM = body.match(/\bFROM\s+([A-Z][A-Z0-9_#@$.]*)/);
+        if (!tM) tM = body.match(/\bJOIN\s+([A-Z][A-Z0-9_#@$.]*)/);
+        tbl = tM ? tM[1] : '';
+        if (tbl) {
+          if (!tableIn[tbl]) { tableIn[tbl] = true; tableInOrder.push(tbl); tableInParaList[tbl] = []; }
+          tableInParaList[tbl].push(nome);
+        }
+
+      } else if (sqlOp === 'INSERT') {
+        tM = body.match(/^INSERT\s+INTO\s+([A-Z][A-Z0-9_#@$.]*)/);
+        tbl = tM ? tM[1] : '';
+        if (tbl) {
+          _wk = nome + '|' + tbl + '|INSERT';
+          if (!tableOutSeen[_wk]) { tableOutSeen[_wk] = true; tableOutWriters.push({ tbl: tbl, op: 'INSERT', para: nome }); }
+        }
+
+      } else if (sqlOp === 'UPDATE') {
+        tM = body.match(/^UPDATE\s+([A-Z][A-Z0-9_#@$.]*)/);
+        tbl = tM ? tM[1] : '';
+        if (tbl) {
+          _wk = nome + '|' + tbl + '|UPDATE';
+          if (!tableOutSeen[_wk]) { tableOutSeen[_wk] = true; tableOutWriters.push({ tbl: tbl, op: 'UPDATE', para: nome }); }
+        }
+
+      } else if (sqlOp === 'DELETE') {
+        tM = body.match(/^DELETE\s+FROM\s+([A-Z][A-Z0-9_#@$.]*)/);
+        if (!tM) tM = body.match(/^DELETE\s+([A-Z][A-Z0-9_#@$.]*)/);
+        tbl = tM ? tM[1] : '';
+        if (tbl) {
+          _wk = nome + '|' + tbl + '|DELETE';
+          if (!tableOutSeen[_wk]) { tableOutSeen[_wk] = true; tableOutWriters.push({ tbl: tbl, op: 'DELETE', para: nome }); }
+        }
+      }
+    }
+  });
+
+  // ── 2. Sequência principal de parágrafos (segue PERFORMs da entrada, 1 nível)
+  var entryName = null;
+  for (var _ei = 0; _ei < ordemParagrafos.length; _ei++) {
+    var _en = ordemParagrafos[_ei];
+    if (tipos[_en] !== 'fim-paragrafo' && estrutura[_en] && estrutura[_en].length) {
+      entryName = _en;
+      break;
+    }
+  }
+  if (!entryName) return [];
+
+  var mainSeq  = [];
+  var _visited = {};
+
+  function _collect(nome) {
+    if (_visited[nome] || !estrutura[nome]) return;
+    _visited[nome] = true;
+    mainSeq.push(nome);
+    (estrutura[nome] || []).forEach(function(linha) {
+      var up = linha.trim().toUpperCase().replace(/\.$/, '');
+      var m  = up.match(/^PERFORM\s+([A-Z][A-Z0-9-]*)/);
+      if (m && estrutura[m[1]] && !_visited[m[1]]) _collect(m[1]);
+    });
+  }
+  _collect(entryName);
+
+  // ── 3. Separar arquivos por modo
+  var filesIn  = fileOrder.filter(function(f) { return fileMap[f] === 'INPUT'; });
+  var filesOut = fileOrder.filter(function(f) { return fileMap[f] === 'OUTPUT' || fileMap[f] === 'EXTEND'; });
+  var filesIO  = fileOrder.filter(function(f) { return fileMap[f] === 'I-O'; });
+
+  // ── 4. Três colunas:
+  //    col 0 (esquerda)  = arquivos de entrada → seta → 1º programa
+  //    col 1 (centro)    = programas encadeados verticalmente
+  //    col 2 (direita)   = último programa → seta → arquivos de saída
+  var els  = [];
+  var _cnt = 0;
+
+  function _node(tipo, label, col, extra) {
+    var id = 'm_' + (++_cnt);
+    els.push({ data: Object.assign({ id: id, label: label, tipo: tipo, col: col }, extra || {}) });
+    return id;
+  }
+  function _edge(src, tgt) {
+    els.push({ data: { source: src, target: tgt } });
+  }
+
+  // Programas (col 1) encadeados verticalmente
+  var firstProcId = null;
+  var lastProcId  = null;
+  var procIdMap   = {};  // nome → id do nó
+  mainSeq.forEach(function(nome) {
+    var icon = tipos[nome] === 'section' ? '\u00a7 ' : '';
+    var pid  = _node('macro-process', icon + nome, 1, { para: nome });
+    procIdMap[nome] = pid;
+    if (lastProcId) _edge(lastProcId, pid);
+    if (!firstProcId) firstProcId = pid;
+    lastProcId = pid;
+  });
+
+  // Arquivos de entrada (col 0) → apontam para o 1º programa
+  if (firstProcId) {
+    filesIn.forEach(function(f) {
+      var fid = _node('macro-file-in', f, 0, { fileMode: 'INPUT', fileName: f });
+      _edge(fid, firstProcId);
+    });
+    filesIO.forEach(function(f) {
+      var fid = _node('macro-file-io', f, 0, { fileMode: 'I-O', fileName: f });
+      _edge(fid, firstProcId);
+    });
+    // Tabelas SELECT/DECLARE CURSOR → cada parágrafo que lê
+    tableInOrder.forEach(function(t) {
+      var readers = tableInParaList[t] || [];
+      var fid = _node('macro-table-in', 'SELECT\n' + t, 0, { tableOp: 'SELECT', tableName: t, para: readers[0] || null, detail: 'FROM ' + t });
+      if (readers.length > 0) {
+        readers.forEach(function(para) {
+          var tgtId = (procIdMap[para]) ? procIdMap[para] : firstProcId;
+          _edge(fid, tgtId);
+        });
+      } else {
+        _edge(fid, firstProcId);
+      }
+    });
+  }
+
+  // Arquivos de saída (col 2) ← parágrafo que faz WRITE
+  if (lastProcId) {
+    // Arquivos OUTPUT/EXTEND: um nó por (parágrafo × arquivo) via scanner WRITE
+    // Se não houver WRITE detectado para um arquivo, usa lastProcId como fallback
+    filesOut.forEach(function(f) {
+      var fid = _node('macro-file-out', f, 2, { fileMode: 'OUTPUT', fileName: f });
+      _edge(lastProcId, fid);
+    });
+    filesIO.forEach(function(f) {
+      var fid = _node('macro-file-io', f, 2, { fileMode: 'I-O', fileName: f });
+      _edge(lastProcId, fid);
+    });
+    // Tabelas — um bloco separado por (parágrafo × tabela × operação)
+    tableOutWriters.forEach(function(entry) {
+      var opDetail = entry.op === 'INSERT' ? ('INSERT INTO ' + entry.tbl) :
+                     entry.op === 'UPDATE' ? ('UPDATE ' + entry.tbl) :
+                     ('DELETE FROM ' + entry.tbl);
+      var fid = _node('macro-table-out', entry.op + '\n' + entry.tbl, 2, { tableOp: entry.op, tableName: entry.tbl, para: entry.para, detail: opDetail });
+      var srcId = (procIdMap[entry.para]) ? procIdMap[entry.para] : lastProcId;
+      _edge(srcId, fid);
+    });
+  }
+
+  return els;
 }
 
 // ================= RUN =================
@@ -3482,14 +4437,32 @@ function destacarNoCobol(data) {
   let paraMode  = false;
   let parentPara = data.para || null;  // par�grafo-pai do n� (evita falsos positivos)
 
-  // �� Atalho: usa srcLine diretamente (linha exata no c�digo fonte) ��
+  // ── Atalho: usa srcLine diretamente (linha exata no c�digo fonte) ──
   if (!paraMode && data.srcLine != null) {
     var _cPos = 0;
     for (var _si = 0; _si < data.srcLine; _si++) {
       _cPos += (linhas[_si] || '').length + 1;
     }
-    var _nlEnd = code.indexOf('\n', _cPos);
-    var _ePos = _nlEnd >= 0 ? _nlEnd : code.length;
+    // Para blocos multi-linha (EXEC SQL, STRING, PERFORM inline etc.) avança
+    // até encontrar END-EXEC / END-STRING / END-PERFORM / END-EVALUATE ou '.'.
+    var _firstLineUp = (linhas[data.srcLine] || '').trim().toUpperCase();
+    var _isExecSQL   = /^EXEC\s+SQL\b/.test(_firstLineUp);
+    var _ePos;
+    if (_isExecSQL) {
+      // Avança linha a linha até END-EXEC ou ponto final
+      var _blkPos = _cPos;
+      var _blkLine = data.srcLine;
+      while (_blkLine < linhas.length) {
+        var _bl = (linhas[_blkLine] || '').trim();
+        _blkPos += (linhas[_blkLine] || '').length + 1;
+        _blkLine++;
+        if (/^END-EXEC\b/i.test(_bl.replace(/\.$/, '')) || _bl.endsWith('.')) break;
+      }
+      _ePos = _blkPos - 1;  // inclui END-EXEC mas não o \n seguinte
+    } else {
+      var _nlEnd = code.indexOf('\n', _cPos);
+      _ePos = _nlEnd >= 0 ? _nlEnd : code.length;
+    }
     _ignorarCursorMove = true;
     ta.focus();
     ta.setSelectionRange(_cPos, _ePos);
@@ -3508,8 +4481,15 @@ function destacarNoCobol(data) {
     paraMode  = true;
     parentPara = null; // para modo busca o pr�prio cabe�alho � sem restri��o
   } else if (data.detail) {
-    const fl = (data.detail.split('\n').find(function(s) { return s.trim(); }) || '').trim().toUpperCase();
-    searchKey = fl;
+    const detailLines = data.detail.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    // Se a primeira linha é apenas "EXEC SQL" (genérico), usa a segunda linha para
+    // evitar bater em "EXEC SQL INCLUDE SQLCA END-EXEC" na WORKING-STORAGE
+    var fl = (detailLines[0] || '').toUpperCase();
+    if (/^EXEC\s+SQL$/i.test(fl) && detailLines[1]) {
+      searchKey = detailLines[1].toUpperCase();
+    } else {
+      searchKey = fl;
+    }
   } else if (data.label) {
     searchKey = data.label.trim().toUpperCase().replace(/\.$/, '').replace(/\.\.\.$/, '').trim();
   }
@@ -3538,8 +4518,8 @@ function destacarNoCobol(data) {
     } else {
       var probe = searchKey.substring(0, 30);
       if (lineUp.startsWith(probe)) { startChar = lineStart; break; }
-      // Fallback: primeiros 10 chars
-      if (probe.length > 6 && lineUp.indexOf(probe.substring(0, 10)) !== -1) { startChar = lineStart; break; }
+      // Fallback: probe completo com indexOf (evita falsos positivos entre nomes parecidos)
+      if (probe.length > 6 && lineUp.indexOf(probe) !== -1) { startChar = lineStart; break; }
     }
   }
 
@@ -3552,7 +4532,7 @@ function destacarNoCobol(data) {
       var lu2 = linhas[ii].trim().toUpperCase().replace(/\.$/, '');
       var pr2 = searchKey.substring(0, 30);
       if (lu2.startsWith(pr2)) { startChar = ls2; break; }
-      if (pr2.length > 6 && lu2.indexOf(pr2.substring(0, 10)) !== -1) { startChar = ls2; break; }
+      if (pr2.length > 6 && lu2.indexOf(pr2) !== -1) { startChar = ls2; break; }
     }
   }
 
@@ -3824,6 +4804,10 @@ function _buildExecFlow(prog, estrutura, tipos, ordemParagrafos, expandThru) {
         lines.push(np + '\u2514\u2500\u2500 \u21a9 j\u00e1 exibido');
         return;
       }
+      if (!expandThru) {
+        // Modo resumido: PERFORM é folha — não expande o corpo
+        return;
+      }
       if (depth < MAX_D) {
         var v2 = Object.assign({}, visited); v2[tgt] = true;
         renderNodes(buildAST(estrutura[tgt] || [], null), np, v2, depth + 1);
@@ -3870,8 +4854,10 @@ function _buildExecFlow(prog, estrutura, tipos, ordemParagrafos, expandThru) {
       lines.push(pf + con + lbl);
       var named = n.named;
       if (named && estrutura[named] && !visited[named] && depth < MAX_D) {
-        var v3 = Object.assign({}, visited); v3[named] = true;
-        renderNodes(buildAST(estrutura[named] || [], null), np, v3, depth + 1);
+        if (expandThru) {
+          var v3 = Object.assign({}, visited); v3[named] = true;
+          renderNodes(buildAST(estrutura[named] || [], null), np, v3, depth + 1);
+        }
       } else if (n.body && n.body.length) {
         renderNodes(n.body, np, visited, depth);
       }
@@ -3891,14 +4877,46 @@ function _buildExecFlow(prog, estrutura, tipos, ordemParagrafos, expandThru) {
         lines.push(np + (bl ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + br.tag);
         renderNodes(br.ns, np + (bl ? '     ' : '\u2502    '), visited, depth);
       });
+    } else if (n.type === 'read') {
+      lines.push(pf + con + (n.label || '').replace(/\n/g, ' | '));
+      var rdBrs = [];
+      if (n.atEnd      && n.atEnd.length)      rdBrs.push({ tag: '[AT END]',      ns: n.atEnd });
+      if (n.notAtEnd   && n.notAtEnd.length)   rdBrs.push({ tag: '[N\u00c3O AT END]',   ns: n.notAtEnd });
+      if (n.invalidKey && n.invalidKey.length) rdBrs.push({ tag: '[INVALID KEY]',   ns: n.invalidKey });
+      rdBrs.forEach(function(br, bi) {
+        var bl = bi === rdBrs.length - 1;
+        lines.push(np + (bl ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + br.tag);
+        renderNodes(br.ns, np + (bl ? '     ' : '\u2502    '), visited, depth);
+      });
+    } else if (n.type === 'call') {
+      lines.push(pf + con + (n.label || '').replace(/\n/g, ' | '));
+      var cBrs = [];
+      if (n.onException    && n.onException.length)    cBrs.push({ tag: '[ON EXCEPTION]',     ns: n.onException });
+      if (n.notOnException && n.notOnException.length) cBrs.push({ tag: '[NOT ON EXCEPTION]', ns: n.notOnException });
+      cBrs.forEach(function(br, bi) {
+        var bl = bi === cBrs.length - 1;
+        lines.push(np + (bl ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + br.tag);
+        renderNodes(br.ns, np + (bl ? '     ' : '\u2502    '), visited, depth);
+      });
     } else if (n.type === 'goto') {
       lines.push(pf + con + 'GO TO ' + n.target);
     } else if (n.type === 'evaluate') {
       lines.push(pf + con + (n.label || 'EVALUATE'));
+      var evWs = n.whens || [];
+      evWs.forEach(function(w, wi) {
+        var wlast = wi === evWs.length - 1;
+        var wlbl = w.label || ('WHEN #' + (wi + 1));
+        lines.push(np + (wlast ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + '[' + wlbl + ']');
+        if (w.nodes && w.nodes.length) {
+          renderNodes(w.nodes, np + (wlast ? '     ' : '\u2502    '), visited, depth);
+        }
+      });
     } else if (n.type === 'stop') {
       lines.push(pf + con + (n.label || 'STOP'));
     } else {
-      var lbl2 = (n.label || '');
+      // Nó genérico (instr, open, close, write, call, read, sql, etc.)
+      // Label pode ser multi-linha — indenta as continuações
+      var lbl2 = (n.label || '').replace(/\n/g, ' | ');
       if (lbl2) lines.push(pf + con + lbl2);
     }
   }
@@ -3957,8 +4975,31 @@ function _renderAstNode(n, pf, last, lines) {
     lines.push(pf + con + 'PERFORM ' + n.from + ' THRU ' + n.to + (n.cond ? '  '+n.cond : ''));
   } else if (n.type === 'goto') {
     lines.push(pf + con + 'GO TO ' + n.target);
+  } else if (n.type === 'read') {
+    lbl = (n.label || '').replace(/\n/g, ' | ');
+    lines.push(pf + con + lbl);
+    var rdBrs2 = [];
+    if (n.atEnd      && n.atEnd.length)      rdBrs2.push({ tag: '[AT END]',      ns: n.atEnd });
+    if (n.notAtEnd   && n.notAtEnd.length)   rdBrs2.push({ tag: '[N\u00c3O AT END]',   ns: n.notAtEnd });
+    if (n.invalidKey && n.invalidKey.length) rdBrs2.push({ tag: '[INVALID KEY]',   ns: n.invalidKey });
+    rdBrs2.forEach(function(br, bi) {
+      var bl = bi === rdBrs2.length - 1;
+      lines.push(np + (bl ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + br.tag);
+      (br.ns||[]).forEach(function(a2, ai) { _renderAstNode(a2, np + (bl ? '     ' : '\u2502    '), ai === br.ns.length - 1, lines); });
+    });
+  } else if (n.type === 'call') {
+    lbl = (n.label || '').replace(/\n/g, ' | ');
+    lines.push(pf + con + lbl);
+    var cBrs2 = [];
+    if (n.onException    && n.onException.length)    cBrs2.push({ tag: '[ON EXCEPTION]',     ns: n.onException });
+    if (n.notOnException && n.notOnException.length) cBrs2.push({ tag: '[NOT ON EXCEPTION]', ns: n.notOnException });
+    cBrs2.forEach(function(br, bi) {
+      var bl = bi === cBrs2.length - 1;
+      lines.push(np + (bl ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ') + br.tag);
+      (br.ns||[]).forEach(function(a2, ai) { _renderAstNode(a2, np + (bl ? '     ' : '\u2502    '), ai === br.ns.length - 1, lines); });
+    });
   } else {
-    lbl = (n.label || '');
+    lbl = (n.label || '').replace(/\n/g, ' | ');
     lines.push(pf + con + lbl);
   }
 }
@@ -4322,8 +5363,11 @@ function exportarHTML(opts) {
           + '<div class="legenda">'
           + '<div class="leg-item"><div class="leg-cor" style="background:#90a4ae"></div>Instru&#231;&#227;o</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#e3f2fd;border:2px solid #90caf9"></div>Decis&#227;o (IF)</div>'
+          + '<div class="leg-item"><div class="leg-cor" style="background:#fdf2f8;border:2.5px solid #a21caf;clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%)"></div>EVALUATE (sele&#231;&#227;o)</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#1565c0"></div>PERFORM / Loop</div>'
-          + '<div class="leg-item"><div class="leg-cor" style="background:#e65100"></div>I/O (DISPLAY/ACCEPT/READ/WRITE)</div>'
+          + '<div class="leg-item"><div class="leg-cor" style="background:#ecfeff;border:2px solid #0891b2"></div>I/O &#8212; READ / WRITE / DISPLAY</div>'
+          + '<div class="leg-item"><div class="leg-cor" style="background:#e0f2f1;border:2px solid #00695c"></div>Prepara&#231;&#227;o &#8212; OPEN (trap&#233;zio)</div>'
+          + '<div class="leg-item"><div class="leg-cor" style="background:#fce4ec;border:2px solid #880e4f;border-radius:50%"></div>Terminador &#8212; CLOSE (oval)</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#7c3aed"></div>GO TO</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#1565c0"></div>SQL SELECT (DB2)</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#2e7d32"></div>SQL INSERT (DB2)</div>'
@@ -4510,10 +5554,13 @@ function exportarWord(opts) {
     + '<table style="width:auto;border-collapse:collapse;font-size:10pt"><tbody>'
     + '<tr><td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#90a4ae;vertical-align:middle;margin-right:6px"></span>Instru&#231;&#227;o</td>'
     + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#e3f2fd;border:1px solid #90caf9;vertical-align:middle;margin-right:6px"></span>Decis&#227;o (IF)</td>'
-    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#1565c0;vertical-align:middle;margin-right:6px"></span>PERFORM / Loop</td></tr>'
-    + '<tr><td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#e65100;vertical-align:middle;margin-right:6px"></span>I/O (READ/WRITE)</td>'
-    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#7c3aed;vertical-align:middle;margin-right:6px"></span>GO TO</td>'
-    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#b71c1c;vertical-align:middle;margin-right:6px"></span>STOP / GOBACK</td></tr>'
+    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#fdf2f8;border:1px solid #a21caf;vertical-align:middle;margin-right:6px;transform:rotate(45deg)"></span>EVALUATE (sele&#231;&#227;o)</td></tr>'
+    + '<tr><td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#1565c0;vertical-align:middle;margin-right:6px"></span>PERFORM / Loop</td>'
+    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#e0f2f1;border:1px solid #00695c;vertical-align:middle;margin-right:6px"></span>Prepara&#231;&#227;o (OPEN)</td>'
+    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#fce4ec;border:1px solid #880e4f;border-radius:50%;vertical-align:middle;margin-right:6px"></span>Terminador (CLOSE)</td></tr>'
+    + '<tr><td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#7c3aed;vertical-align:middle;margin-right:6px"></span>GO TO</td>'
+    + '<td style="padding:4px 8px;border:1px solid #ccc"><span style="display:inline-block;width:14px;height:14px;background:#b71c1c;vertical-align:middle;margin-right:6px"></span>STOP / GOBACK</td>'
+    + '<td></td></tr>'
     + '</tbody></table>'
     + '<p style="text-align:center;color:#aaa;font-size:9pt;margin-top:24pt">COBOL Flow Visualizer v.1.1 &mdash; Sistema criado por Elaine Nunes (linkedin.com/in/elainemirellanunes) &mdash; ' + data + '</p>';
 
@@ -4728,6 +5775,7 @@ function exportarCobol() {
 function exportarSessao() {
   var cobol = (document.getElementById('input') || {}).value || '';
   var layout = (document.getElementById('layout-select') || {}).value || 'tb';
+  var depthSel = (document.getElementById('depth-select') || {}).value || '30';
   var positions = {};
   var zoom = 1, pan = { x: 0, y: 0 };
   if (cy) {
@@ -4745,7 +5793,7 @@ function exportarSessao() {
     savedAt:   new Date().toISOString(),
     cobol:     cobol,
     layout:    layout,
-    maxDepth:  (_currentMeta && _currentMeta.maxDepth) || 30,
+    maxDepth:  parseInt(depthSel, 10) || (_currentMeta && _currentMeta.maxDepth) || 30,
     zoom:      zoom,
     pan:       pan,
     positions: positions,
@@ -4848,8 +5896,20 @@ function importarSessao(event) {
     var sel = document.getElementById('layout-select');
     if (sel && sessao.layout) sel.value = sessao.layout;
 
-    // Restaura maxDepth salvo (evita que fluxo seja cortado ao reabrir sess�o)
-    if (sessao.maxDepth) window._maxDepthOverride = sessao.maxDepth;
+    // Restaura maxDepth salvo (evita que fluxo seja cortado ao reabrir sessão)
+    if (sessao.maxDepth) {
+      window._maxDepthOverride = sessao.maxDepth;
+      var dSel = document.getElementById('depth-select');
+      if (dSel) {
+        var _dv;
+        if      (sessao.maxDepth >= 10) _dv = '30';
+        else if (sessao.maxDepth >= 3)  _dv = '3';
+        else if (sessao.maxDepth >= 2)  _dv = '2';
+        else if (sessao.maxDepth >= 1)  _dv = '1';
+        else                            _dv = '0';
+        dSel.value = _dv;
+      }
+    }
 
     // Gera fluxo
     analisar();
@@ -4922,7 +5982,11 @@ function analisar() {
       meta.maxDepth = maxDepth;
       _currentMeta = meta;
       const { estrutura, tipos, secoes } = meta;
-      const fluxo = gerarFluxo(estrutura, tipos, secoes, meta);
+      const _viewSel = document.getElementById('view-select');
+      const _viewMode = _viewSel ? _viewSel.value : 'detail';
+      const fluxo = (_viewMode === 'macro')
+        ? gerarMacroFluxo(meta)
+        : gerarFluxo(estrutura, tipos, secoes, meta);
 
       // Verifica se o fluxo gerou n�s reais
       const nosReais = fluxo.filter(function(e){ return e.data && e.data.id && !e.data.source; });
@@ -4993,9 +6057,13 @@ function getLayoutConfig() {
     return Math.round(espMax - t * (espMax - espMin));
   }
   var nNodes = cy ? cy.nodes().length : 0;
+  // Quando há nós EVALUATE, aumenta nodeSep para acomodar fan-out com múltiplos ramos WHEN
+  var nEvaluate = cy ? cy.nodes('[tipo="evaluate"]').length : 0;
   var nodeSepAdapt = _escalar(nNodes, 20, 200, 20, 80);
+  if (nEvaluate > 0) nodeSepAdapt = Math.max(nodeSepAdapt, 50);
   var rankSepAdapt = _escalar(nNodes, 20, 200, 28, 55);
   var edgeSepAdapt = _escalar(nNodes, 20, 200, 8,  25);
+  if (nEvaluate > 0) edgeSepAdapt = Math.max(edgeSepAdapt, 18);
 
   const base = {
     fit: true, animate: false, padding: 40,
@@ -5039,6 +6107,60 @@ function getLayoutConfig() {
 // Passo 1: Posiciona cada coluna no eixo X lado a lado, come�ando em PAD_TOP.
 // Passo 2: Alinha o in�cio (cabe�alho) de cada coluna N com o fim (?) da coluna N-1,
 //          fazendo o fluxo continuar verticalmente de uma coluna para a pr�xima.
+// Layout exclusivo para Macro-Fluxo:
+// Empilha os nós verticalmente em cada coluna (col 0 = entradas, col 1 = processos, col 2 = saídas).
+// Não usa Dagre para posicionamento final — aplica posições manuais diretamente.
+function aplicarLayoutMacro() {
+  if (!cy) return;
+
+  var COL_X    = [160, 480, 800];   // X central de cada coluna
+  var NODE_H   = 50;                // altura estimada por nó
+  var NODE_GAP = 30;                // espaço vertical entre nós da mesma coluna
+  var FIRST_Y  = 60;                // Y do primeiro processo
+
+  // --- Col 1: processos — ordena pelo Y atual (Dagre já sequenciou) ---
+  var col1 = cy.nodes().filter(function(n) { return n.data('col') === 1; });
+  var col1arr = col1.toArray().sort(function(a, b) {
+    return a.position('y') - b.position('y');
+  });
+  var y1 = FIRST_Y;
+  col1arr.forEach(function(n) {
+    var nh = (n.height() || NODE_H);
+    n.position({ x: COL_X[1], y: y1 + nh / 2 });
+    y1 += nh + NODE_GAP;
+  });
+  var firstProcY = col1arr.length ? col1arr[0].position('y') : FIRST_Y;
+  var lastProcY  = col1arr.length ? col1arr[col1arr.length - 1].position('y') : FIRST_Y;
+  var midProcY   = (firstProcY + lastProcY) / 2;
+
+  // --- Col 0: entradas — empilha centrada no meio de col 1 ---
+  var col0arr = cy.nodes().filter(function(n) { return n.data('col') === 0; }).toArray();
+  var h0 = col0arr.reduce(function(s, n) { return s + (n.height() || NODE_H) + NODE_GAP; }, -NODE_GAP);
+  var y0 = midProcY - h0 / 2;
+  col0arr.forEach(function(n) {
+    var nh = (n.height() || NODE_H);
+    n.position({ x: COL_X[0], y: y0 + nh / 2 });
+    y0 += nh + NODE_GAP;
+  });
+
+  // --- Col 2: saídas — empilha centrada no Y do último processo ---
+  var col2arr = cy.nodes().filter(function(n) { return n.data('col') === 2; }).toArray();
+  var h2 = col2arr.reduce(function(s, n) { return s + (n.height() || NODE_H) + NODE_GAP; }, -NODE_GAP);
+  var y2 = lastProcY - h2 / 2;
+  col2arr.forEach(function(n) {
+    var nh = (n.height() || NODE_H);
+    n.position({ x: COL_X[2], y: y2 + nh / 2 });
+    y2 += nh + NODE_GAP;
+  });
+
+  // Arestas entre colunas diferentes: bezier suave
+  cy.edges().forEach(function(e) {
+    var sc = e.source().data('col') != null ? e.source().data('col') : 0;
+    var tc = e.target().data('col') != null ? e.target().data('col') : 0;
+    if (sc !== tc) e.style({ 'curve-style': 'bezier' });
+  });
+}
+
 function aplicarLayoutColunas() {
   if (!cy) return;
   var allNodes = cy.nodes();
