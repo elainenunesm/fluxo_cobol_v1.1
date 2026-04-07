@@ -232,7 +232,26 @@
     color: #222;
   }
   .diag-nav-list { max-height: 300px; overflow-y: auto; }
-  #diag-exec-list { max-height: 460px; }
+  #diag-exec-list { max-height: 420px; }
+  /* Barra de ações do menu de execução (expandir/recolher tudo) */
+  .exec-action-bar {
+    display: flex; gap: 4px; align-items: center;
+    padding: 3px 8px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f4f6fa;
+  }
+  .exec-action-btn {
+    font-size: 10px; padding: 2px 8px;
+    border: 1px solid #c5d0df; border-radius: 3px;
+    background: #fff; color: #1e3a5f;
+    cursor: pointer; font-family: 'Segoe UI', Arial, sans-serif;
+    white-space: nowrap;
+    transition: background .1s, border-color .1s;
+  }
+  .exec-action-btn:hover { background: #dde6f5; border-color: #90b0d8; }
+  body.dark-mode .exec-action-bar  { background: #1a1f2b; border-bottom-color: #2d3748; }
+  body.dark-mode .exec-action-btn  { background: #252d3d; color: #9cdcfe; border-color: #334155; }
+  body.dark-mode .exec-action-btn:hover { background: #1e3a5f; border-color: #4a6fa5; }
   /* Item de navegação (parágrafo/seção) */
   .diag-goto-item {
     display: flex; align-items: center; gap: 8px;
@@ -315,19 +334,25 @@
   body.dark-mode .diag-exec-item.exec-hdr:hover { background: #1e2d40; }
   body.dark-mode .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec) { background: #0d2820; border-top-color: #1e4d35; color: #4ec9b0; }
   body.dark-mode .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec):hover { background: #112e26; }
-  /* Grupos colapsáveis — mapa visual de parágrafos */
+  /* Grupos colapsáveis — parágrafos do menu de execução */
+  .exec-par-grp { display: block; }
   .exec-grp-body.collapsed { display: none; }
   .exec-grp-body > .diag-exec-item {
-    padding-left: 30px;
     border-left: 3px solid #d6e4f7;
     background: #fafbfe;
   }
   .exec-grp-body > .diag-exec-item:hover { background: #eef5ff; }
-  .exec-grp-toggle {
-    font-size: 9px; flex-shrink: 0; width: 10px; line-height: 1;
-    color: #94a3b8; font-family: monospace; user-select: none;
-    transition: transform .15s;
+  /* Sub-grupos aninhados também recebem borda lateral */
+  .exec-grp-body > .exec-par-grp > .diag-exec-item {
+    border-left: 3px solid #d6e4f7;
   }
+  .exec-grp-toggle {
+    font-size: 10px; flex-shrink: 0; width: 12px; line-height: 1;
+    color: #64748b; font-family: monospace; user-select: none;
+    cursor: pointer; padding-right: 3px;
+  }
+  .exec-grp-toggle:hover { color: #1e3a5f; }
+  .exec-grp-toggle-ph { display: inline-block; width: 12px; flex-shrink: 0; padding-right: 3px; }
   /* Arquivos / FDs */
   .exec-fd-section { border-top: 2px solid #dde1e7; }
   .exec-fd-hdr {
@@ -360,6 +385,8 @@
   /* Dark mode — grupos e FD */
   body.dark-mode .exec-grp-body > .diag-exec-item { border-left-color: #2a3a50; background: #191e2b; }
   body.dark-mode .exec-grp-body > .diag-exec-item:hover { background: #1b2840; }
+  body.dark-mode .exec-grp-toggle { color: #4ec9b0; }
+  body.dark-mode .exec-grp-toggle:hover { color: #9cdcfe; }
   body.dark-mode .exec-fd-hdr { background: #1a1f2b; color: #9cdcfe; }
   body.dark-mode .exec-fd-hdr:hover { background: #1e2840; }
   body.dark-mode .exec-fd-item { color: #cbd5e1; border-bottom-color: #252d3d; }
@@ -1960,7 +1987,9 @@
         <option value="macro">&#128200; Macro-fluxo</option>
       </select>
       <select id="depth-select" class="ribbon-select" title="Profundidade de expansão de parágrafos">
-        <option value="30">&#128260; Completo (padrão)</option>
+        <option value="30">&#128260; Completo (inteligente)</option>
+        <option value="999">&#9889; Tudo (pode ser lento)</option>
+        <option value="6">&#128196; 6 níveis</option>
         <option value="3">&#128196; 3 níveis</option>
         <option value="2">&#128196; 2 níveis</option>
         <option value="1">&#9646; 1 nível</option>
@@ -2150,6 +2179,10 @@
     &#9654; Ir para execu&#231;&#227;o...
     <div class="diag-nav-menu diag-exec-menu" id="diag-exec-menu">
       <input class="diag-nav-filter" id="diag-exec-filter" type="text" placeholder="Filtrar processo..." onclick="event.stopPropagation()" oninput="_filtrarDiagExec(this.value)">
+      <div class="exec-action-bar" id="diag-exec-action-bar">
+        <button class="exec-action-btn" onclick="event.stopPropagation();_execExpandAll(true)" title="Expandir todos os parágrafos">&#9660; Expandir tudo</button>
+        <button class="exec-action-btn" onclick="event.stopPropagation();_execExpandAll(false)" title="Recolher todos os parágrafos">&#9654; Recolher tudo</button>
+      </div>
       <div class="diag-nav-list" id="diag-exec-list"></div>
     </div>
   </div>
@@ -2550,33 +2583,44 @@ function _buildDiagGotoList(filtro) {
   var fil = (filtro || '').toUpperCase().trim();
   var items = [];
 
+  // ── Índice O(n) uma única vez ────────────────────────────────
+  // Prioridade do nó mais canônico para cada target:
+  //   isEntry(999) > paragrafo/section(3) > section-para(2) > perform/perform-section(1) > outros(0)
+  var _GOTO_PRI = {
+    'paragrafo': 3, 'section': 3,
+    'section-para': 2,
+    'perform': 1, 'perform-section': 1,
+    'perform-fall': 0
+  };
+  var _gotoIdx = {};  // target → { id, pri }
+  cy.nodes().forEach(function(n) {
+    var tgt = (n.data('target') || '').trim();
+    if (!tgt || n.data('tipo') === 'merge') return;
+    var pri = n.data('isEntry') ? 999 : (_GOTO_PRI[n.data('tipo')] || 0);
+    var cur = _gotoIdx[tgt];
+    if (!cur || pri > cur.pri) _gotoIdx[tgt] = { id: n.id(), pri: pri };
+  });
+  // ─────────────────────────────────────────────────────────────
+
   // Usa _currentMeta para ordem e badges corretos; fallback por varredura do cy
   if (_currentMeta && _currentMeta.ordemParagrafos && _currentMeta.ordemParagrafos.length) {
     var tipos = _currentMeta.tipos || {};
     _currentMeta.ordemParagrafos.forEach(function(nome) {
       if (fil && nome.toUpperCase().indexOf(fil) === -1) return;
       var t = tipos[nome];
-      if (t === 'fim-paragrafo') return; // vazio, não mostrar
+      if (t === 'fim-paragrafo') return; // EXIT vazio, não mostrar
+      var entry = _gotoIdx[nome];
+      if (!entry) return; // parágrafo não renderizado no diagrama
       var badge = (t === 'section') ? 'sec' : 'para';
-      // Acha nó no cy com este target (tenta entryId também)
-      var found = cy.nodes().filter(function(n) { return n.data('target') === nome; });
-      if (!found.length) return; // parágrafo não renderizado
-      var nodeId = found.first().id();
-      // Preferir o nó isEntry se existir
-      found.forEach(function(n) { if (n.data('isEntry')) nodeId = n.id(); });
-      items.push({ id: nodeId, label: nome, badge: badge });
+      items.push({ id: entry.id, label: nome, badge: badge });
     });
   } else {
-    // Fallback: varredura cy, de-duping por target
-    var seen = {};
-    cy.nodes().forEach(function(n) {
-      var target = (n.data('target') || '').trim();
-      if (!target || seen[target]) return;
-      if (fil && target.toUpperCase().indexOf(fil) === -1) return;
-      var tipo = n.data('tipo') || '';
+    // Fallback: varredura cy, de-duping por target (usa índice já construído)
+    Object.keys(_gotoIdx).forEach(function(tgt) {
+      if (fil && tgt.toUpperCase().indexOf(fil) === -1) return;
+      var tipo = cy.getElementById(_gotoIdx[tgt].id).data('tipo') || '';
       var badge = /section/i.test(tipo) ? 'sec' : 'para';
-      seen[target] = true;
-      items.push({ id: n.id(), label: target, badge: badge });
+      items.push({ id: _gotoIdx[tgt].id, label: tgt, badge: badge });
     });
     items.sort(function(a, b) { return a.label.localeCompare(b.label); });
   }
@@ -2620,7 +2664,12 @@ function jumpDiagNode(nodeId, closeMenu) {
 
 // ================= IR PARA EXECUÇÃO NO DIAGRAMA =================
 
-// Mapa tipo -> badge (inclui parágrafo e seção como nós do fluxo)
+// Mem\u00f3ria de estado expand/collapse do menu "Ir para Execu\u00e7\u00e3o".
+// parName \u2192 true (expandido) | false (recolhido)
+// Resetado quando um novo programa \u00e9 desenhado (ver desenhar()).
+var _execExpandState = {};
+
+// Mapa tipo -> badge (inclui par\u00e1grafo e se\u00e7\u00e3o como n\u00f3s do fluxo)
 var _EXEC_BADGE_MAP = {
   'paragrafo':       { cls: 'per',  lbl: 'PAR', hdr: true  },
   'section':         { cls: 'sec',  lbl: 'SEC', hdr: true  },
@@ -2718,6 +2767,22 @@ function _buildDiagExecList(filtro) {
   var fdMap           = (meta && meta.fdMap)           || {};
   var fdKeys          = Object.keys(fdMap);
 
+  // ── Enriquecimento: sub-parágrafos sem nó próprio → seção pai ─
+  // Quando a seção não foi expandida no diagrama (circuit-breaker / depth limit),
+  // ela aparece como um único nó perform-section. Seus sub-parágrafos não têm nó
+  // proprio em _cyParId e ficariam com exec-nc (não-clicável).
+  // Aqui registramos esses sub-pars apontando para o nó da seção pai como fallback,
+  // para que o clique no sub-par navegue até a seção mais próxima visível.
+  cy.nodes().forEach(function(n) {
+    var tipo = n.data('tipo') || '';
+    var tgt  = (n.data('target') || '').trim();
+    if ((tipo === 'section' || tipo === 'perform-section') && tgt && secoes[tgt]) {
+      secoes[tgt].forEach(function(subPar) {
+        if (!_cyParId[subPar]) _cyParId[subPar] = n.id();
+      });
+    }
+  });
+
   // ── BFS para modo filtro (lista plana) ───────────────────────
   if (fil) {
     var entryFlat = null;
@@ -2786,8 +2851,38 @@ function _buildDiagExecList(filtro) {
 
   var MAX_D = 12;
 
+  // ── Otimizações para programas grandes ────────────────────────
+  // Cache de AST por parágrafo: buildAST é puro para mesma entrada;
+  // evita reparsear o mesmo parágrafo quando aparece em múltiplos caminhos PERFORM.
+  var _astMemo = {};
+  function _cachedAST(parName) {
+    if (!_astMemo[parName]) {
+      _astMemo[parName] = buildAST(estrutura[parName] || [], null, fdMap);
+    }
+    return _astMemo[parName];
+  }
+
+  // Índice O(1) para ordemParagrafos.indexOf — usado no perform-thru
+  var _parOrdIdx = {};
+  ordemParagrafos.forEach(function(p, i) { _parOrdIdx[p] = i; });
+
+  // Cap de itens no DOM: impede congelamento em programas com centenas de parágrafos.
+  // Quando atingido exibe aviso na lista mas mantém todos os headers clicáveis.
+  var _ITEM_CAP  = 5000;
+  var _itemCount = 0;
+  var _capHit    = false;
+  // ─────────────────────────────────────────────────────────────
+
   // Emite um item-instrução (CMD/SQL/IF/LOOP/etc.) com indentação depth
   function treeItem(depth, badgeCls, badgeLbl, label, nid, addStyle) {
+    if (_capHit) return;
+    if (++_itemCount > _ITEM_CAP) {
+      _capHit = true;
+      html += '<div class="diag-exec-item exec-nc" style="color:#94a3b8;font-style:italic;cursor:default;padding-left:10px;">'
+        + '<span style="display:inline-block;width:24px;flex-shrink:0"></span>'
+        + '<span class="diag-exec-lbl">… lista truncada em ' + _ITEM_CAP + ' itens (use o filtro para navegar)</span></div>';
+      return;
+    }
     var indent  = 10 + depth * 14;
     var onClick = nid ? 'jumpDiagNode(\'' + nid.replace(/'/g, "\\'") + '\',\'diag-exec-menu\')' : '';
     html += '<div class="diag-exec-item' + (onClick ? '' : ' exec-nc') + '" style="padding-left:' + indent + 'px;'
@@ -2806,38 +2901,64 @@ function _buildDiagExecList(filtro) {
 
   function renderPar(parName, parentTipo, depth, visited) {
     if (depth > MAX_D) return;
-    _shownPars[parName] = true;  // marca como mostrado
+    _shownPars[parName] = true;
     var parId  = _cyParId[parName] || null;
     var tipo   = parentTipo || tipos[parName] || 'paragrafo';
     var b      = (tipo === 'section') ? { cls: 'sec', lbl: 'SEC' } : { cls: 'per', lbl: 'PAR' };
     var nl     = (estrutura[parName] || []).length;
     var nlStr  = nl > 0 ? ' (' + nl + ' linha' + (nl !== 1 ? 's' : '') + ')' : '';
     var indent = 10 + depth * 14;
-    html += '<div class="diag-exec-item exec-hdr' + (parId ? '' : ' exec-nc') + '" style="padding-left:' + indent + 'px"'
-      + (parId ? ' onclick="jumpDiagNode(\'' + parId.replace(/'/g,"\\'") + '\',\'diag-exec-menu\')"' : '') + '>'
+
+    // ── Captura HTML dos filhos num buffer separado ──
+    var _savedHtml = html;
+    html = '';
+
+    if (visited[parName]) {
+      treeItem(depth + 1, null, null, '\u21a9 j\u00e1 exibido', null, 'color:#94a3b8;font-style:italic;');
+    } else {
+      var _subPars = secoes[parName] || [];
+      if (estrutura[parName] || _subPars.length) {
+        var v2 = Object.assign({}, visited);
+        v2[parName] = true;
+        if (estrutura[parName] && estrutura[parName].length) {
+          renderAstNodes(_cachedAST(parName), parName, depth + 1, v2);
+        }
+        _subPars.forEach(function(subPar) {
+          if (!v2[subPar] && tipos[subPar] !== 'fim-paragrafo') {
+            renderPar(subPar, tipos[subPar] || 'paragrafo', depth + 1, v2);
+          }
+        });
+      }
+    }
+
+    var childHtml = html;
+    html = _savedHtml;
+
+    // ── Monta wrapper colapsável ──
+    var hasChildren = childHtml.length > 0;
+    // Decide estado inicial: usa memória persistente se existir; senão nivel-0 expandido, sub-pars recolhidos
+    var _stateKey  = parName;
+    var startColl  = hasChildren && (_execExpandState.hasOwnProperty(_stateKey)
+      ? !_execExpandState[_stateKey]   // estado salvo: true=expandido ⇒ não colapsa
+      : depth > 0);                    // padrão
+    var toggleHtml = hasChildren
+      ? '<span class="exec-grp-toggle" title="Expandir/recolher" onclick="event.stopPropagation();_toggleExecGrp(this.closest(\'.exec-par-grp\'))">' + (startColl ? '&#9654;' : '&#9660;') + '</span>'
+      : '<span class="exec-grp-toggle-ph"></span>';
+    var navClick = parId
+      ? ' onclick="jumpDiagNode(\'' + parId.replace(/'/g, "\\'") + '\',\'diag-exec-menu\')"'
+      : '';
+
+    html += '<div class="exec-par-grp" data-par="' + _escHtml(parName) + '">';
+    html += '<div class="diag-exec-item exec-hdr' + (parId ? '' : ' exec-nc') + '" style="padding-left:' + indent + 'px"' + navClick + '>'
+      + toggleHtml
       + '<span class="diag-exec-badge ' + b.cls + '">' + b.lbl + '</span>'
       + '<span class="diag-exec-lbl">' + _escHtml(parName) + '</span>'
       + '<span class="diag-exec-para">' + _escHtml(nlStr) + '</span>'
       + '</div>';
-    if (visited[parName]) {
-      treeItem(depth + 1, null, null, '\u21a9 j\u00e1 exibido', null, 'color:#94a3b8;font-style:italic;');
-      return;
+    if (hasChildren) {
+      html += '<div class="exec-grp-body' + (startColl ? ' collapsed' : '') + '">' + childHtml + '</div>';
     }
-    // Seção pode ter sub-parágrafos mesmo sem instruções diretas
-    var _subPars = secoes[parName] || [];
-    if (!estrutura[parName] && !_subPars.length) return;
-    var v2 = Object.assign({}, visited);
-    v2[parName] = true;
-    // Renderiza instruções diretas do parágrafo/seção (se houver)
-    if (estrutura[parName] && estrutura[parName].length) {
-      renderAstNodes(buildAST(estrutura[parName], null, fdMap), parName, depth + 1, v2);
-    }
-    // Para seções COBOL: o conteúdo real fica nos sub-parágrafos (NOME SECTION. → NOME.)
-    _subPars.forEach(function(subPar) {
-      if (!v2[subPar] && tipos[subPar] !== 'fim-paragrafo') {
-        renderPar(subPar, tipos[subPar] || 'paragrafo', depth + 1, v2);
-      }
-    });
+    html += '</div>';
   }
 
   function renderAstNodes(ast, parName, depth, visited) {
@@ -2858,8 +2979,8 @@ function _buildDiagExecList(filtro) {
 
     } else if (nt === 'perform-thru') {
       // Calcula o range de parágrafos entre n.from e n.to (inclusive)
-      var _fiT = ordemParagrafos.indexOf(n.from);
-      var _tiT = ordemParagrafos.indexOf(n.to);
+      var _fiT = (_parOrdIdx[n.from] !== undefined) ? _parOrdIdx[n.from] : -1;
+      var _tiT = (_parOrdIdx[n.to]   !== undefined) ? _parOrdIdx[n.to]   : -1;
       var _rngT = (_fiT >= 0 && _tiT >= 0 && _fiT <= _tiT)
         ? ordemParagrafos.slice(_fiT, _tiT + 1).filter(function(p) { return tipos[p] !== 'section'; })
         : [];
@@ -3051,13 +3172,54 @@ function _filtrarDiagExec(val) {
 }
 
 // Colapsa/expande um grupo de parágrafo no menu de execução
-function _toggleExecGrp(hdrEl) {
-  var grp  = hdrEl.parentNode;
-  var body = grp && grp.querySelector('.exec-grp-body');
+// Expande ou recolhe todos os parágrafos do menu de execução de uma vez.
+// expand=true → expande tudo; expand=false → recolhe tudo.
+function _execExpandAll(expand) {
+  var list = document.getElementById('diag-exec-list');
+  if (!list) return;
+  var grps = list.querySelectorAll('.exec-par-grp');
+  grps.forEach(function(grp) {
+    var body = null, tog = null;
+    var kids = grp.children;
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].classList.contains('exec-grp-body')) { body = kids[i]; }
+      if (kids[i].classList.contains('diag-exec-item')) {
+        var inner = kids[i].children;
+        for (var j = 0; j < inner.length; j++) {
+          if (inner[j].classList.contains('exec-grp-toggle')) { tog = inner[j]; break; }
+        }
+      }
+    }
+    if (!body) return;
+    if (expand) body.classList.remove('collapsed');
+    else        body.classList.add('collapsed');
+    if (tog) tog.innerHTML = expand ? '&#9660;' : '&#9654;';
+    // Persiste estado
+    var parName = grp.getAttribute('data-par');
+    if (parName) _execExpandState[parName] = expand;
+  });
+}
+
+function _toggleExecGrp(grpEl) {
+  // grpEl = .exec-par-grp wrapper
+  if (!grpEl) return;
+  var body = null, tog = null;
+  var kids = grpEl.children;
+  for (var i = 0; i < kids.length; i++) {
+    if (kids[i].classList.contains('exec-grp-body')) { body = kids[i]; }
+    if (kids[i].classList.contains('diag-exec-item')) {
+      var inner = kids[i].children;
+      for (var j = 0; j < inner.length; j++) {
+        if (inner[j].classList.contains('exec-grp-toggle')) { tog = inner[j]; break; }
+      }
+    }
+  }
   if (!body) return;
   var coll = body.classList.toggle('collapsed');
-  var tog  = hdrEl.querySelector('.exec-grp-toggle');
-  if (tog) tog.textContent = coll ? '▶' : '▼';
+  if (tog) tog.innerHTML = coll ? '&#9654;' : '&#9660;';
+  // Persiste o estado: true = expandido
+  var parName = grpEl.getAttribute('data-par');
+  if (parName) _execExpandState[parName] = !coll;
 }
 
 // Colapsa/expande a seção de arquivos/FDs
@@ -3243,6 +3405,13 @@ function parseCobol(code) {
     if (paraMatch && !paraMatch[1].startsWith('END-')) {
       let nome = paraMatch[1];
       if (!reservadasDiv.has(nome)) {
+        // Padrão A COBOL: parágrafo com mesmo nome da seção atual
+        // Ex: "P1000-CALC SECTION." seguido de "P1000-CALC."
+        // Neste caso o parágrafo É o corpo da seção — não registrar como parágrafo separado
+        if (nome === secaoAtual) {
+          atual = secaoAtual;
+          return;
+        }
         atual = nome;
         estrutura[nome] = [];
         tipos[nome] = 'paragrafo';
@@ -4095,8 +4264,8 @@ function renderNode(n, els, uid, meta, cs, depth) {
     let thruLabel = from + ' THRU ' + to + (cond ? '\n' + cond : '');
     const _callerColThru = _col();
     els.push({ data: { id, label: thruLabel, tipo: cond ? 'loop' : 'perform', target: from, col: _callerColThru } });
-    // N�o expande se atingiu profundidade m�xima
-    if (depth >= meta.maxDepth) return [id, id];
+    // N�o expande se atingiu profundidade m�xima ou cap de elementos
+    if (depth >= meta.maxDepth ) return [id, id];
     let fi = (ordemParagrafos || []).indexOf(from);
     let ti = (ordemParagrafos || []).indexOf(to);
     if (fi < 0 || ti < 0 || fi > ti) return [id, id];
@@ -4336,6 +4505,20 @@ function gerarFluxo(estrutura, tipos, secoes, meta) {
   meta._ifDepth      = 0;   // guarda de profundidade de IFs aninhados
   meta._renderDepth  = 0;   // guarda absoluta de frames renderSeq ativos
 
+  // Auto-reduz maxDepth SOMENTE no modo "Completo (inteligente)" = value 30.
+  // "Tudo (pode ser lento)" = value 999 → usuário quer expandir tudo → respeitado sem redução.
+  // Outros valores explícitos (6, 3, 2, 1, 0) → respeitados exatamente.
+  var _nPars = op.length;
+  var _modoInteligente = (meta.maxDepth === 30); // somente o padrão inteligente
+  if (_modoInteligente && _nPars > 30) {
+    // Redução automática inteligente para programas grandes
+    meta.maxDepth = _nPars <= 80  ? 6   // médio (≤80 parágrafos)
+                  : _nPars <= 200 ? 3   // grande (≤200 parágrafos)
+                  :                 2;  // muito grande (200+)
+  }
+  // se value=999 (Tudo): meta.maxDepth=999 → renderNode nunca atinge o limite → expande tudo
+  // se value=6/3/2/1/0:  meta.maxDepth inalterado
+
   meta.currentPara = main;
   let entryId = uid(main);
   els.push({ data: { id: entryId, label: main, tipo: tipos[main] || 'paragrafo', target: main, col: 0, isEntry: true } });
@@ -4384,6 +4567,9 @@ let _ignorarCursorMove = false;  // bloqueia onCursorMove quando o foco vem do d
 
 function desenhar(elements, meta) {
   const estrutura = meta.estrutura;
+
+  // Reseta memória de expand/collapse ao carregar novo programa
+  _execExpandState = {};
 
   if (cy) cy.destroy();
 
@@ -5023,12 +5209,12 @@ function desenhar(elements, meta) {
   if (_isMacro) {
     aplicarLayoutMacro();
   } else if (_layoutModo === 'lr') {
-    aplicarPosLayoutLoop();
+    if (cy.nodes().length <= 800) aplicarPosLayoutLoop();
     aplicarLayoutColunas();
-    _ajustarArestasLongas();
+    if (cy.edges().length <= 2000) _ajustarArestasLongas();
   } else {
-    aplicarPosLayoutLoop();
-    _ajustarArestasLongas();
+    if (cy.nodes().length <= 800) aplicarPosLayoutLoop();
+    if (cy.edges().length <= 2000) _ajustarArestasLongas();
   }
 
   // Zoom inicial inteligente:
@@ -6880,7 +7066,9 @@ function importarSessao(event) {
       var dSel = document.getElementById('depth-select');
       if (dSel) {
         var _dv;
-        if      (sessao.maxDepth >= 10) _dv = '30';
+        if      (sessao.maxDepth >= 100) _dv = '999'; // "Tudo (pode ser lento)"
+        else if (sessao.maxDepth >= 10) _dv = '30';
+        else if (sessao.maxDepth >= 5)  _dv = '6';
         else if (sessao.maxDepth >= 3)  _dv = '3';
         else if (sessao.maxDepth >= 2)  _dv = '2';
         else if (sessao.maxDepth >= 1)  _dv = '1';
@@ -7110,6 +7298,14 @@ function getLayoutConfig() {
       return edge.data('label') ? 2 : 1;
     }
   };
+
+  // Para grafos grandes o dagre fica lento (O(V×E×logV)).
+  // Breadthfirst é O(V+E) e suporta milhares de nós sem travar.
+  if (nNodes > 800) {
+    return { name: 'breadthfirst', directed: true, fit: true, padding: 40,
+             spacingFactor: 1.1, animate: false };
+  }
+
   if (v === 'lr') {
     // Usamos dagre TB como base; aplicarLayoutColunas() separa os par�grafos em colunas verticais
     // dispostas da esquerda para a direita conforme a ordem de chamada no COBOL.
