@@ -313,6 +313,7 @@
   .diag-exec-badge.sec  { background: #14532d; color: #bbf7d0; }
   .diag-exec-badge.fall { background: #c2410c; color: #fff7ed; }
   .diag-exec-badge.sql  { background: #6d28d9; color: #ede9fe; }
+  .diag-exec-badge.cpy  { background: #92400e; color: #fef3c7; }
   /* Item de execução — parágrafo/seção header inline na lista */
   .diag-exec-item.exec-hdr {
     background: #eef2f7;
@@ -2691,7 +2692,8 @@ var _EXEC_BADGE_MAP = {
   'sql':             { cls: 'sql',  lbl: 'SQL'  },
   'macro-start':     { cls: 'opn',  lbl: '▶',   hdr: true  },
   'macro-end':       { cls: 'stp',  lbl: '■',   hdr: true  },
-  'macro-process':   { cls: 'per',  lbl: 'PRC', hdr: true  }
+  'macro-process':   { cls: 'per',  lbl: 'PRC', hdr: true  },
+  'copy':            { cls: 'cpy',  lbl: 'CPY'  }
 };
 
 function toggleDiagExec(e) {
@@ -3314,7 +3316,7 @@ function parseCobol(code) {
   // Palavras que terminam com '.' mas N�O s�o par�grafos
   const reservadasDiv = new Set([
     'IDENTIFICATION', 'ENVIRONMENT', 'DATA', 'PROCEDURE',
-    'GOBACK', 'STOP', 'EXIT', 'CONTINUE'
+    'GOBACK', 'STOP', 'EXIT', 'CONTINUE', 'COPY', 'INCLUDE'
   ]);
 
   let inProcedure = false;
@@ -4015,6 +4017,13 @@ function buildAST(linhas, lineNums, fdMap) {
       nodes.push({ type: 'instr', label: moveLine, srcLine: _srcLine });
       continue;
     }
+    // COPY / INCLUDE — módulo externo (copybook) na PROCEDURE DIVISION
+    // Nota: EXEC SQL INCLUDE já é tratado pelo bloco SQL acima; aqui só COPY nativo e ++INCLUDE IBM
+    const copyM = lUp.match(/^(?:\+\+)?(?:COPY|INCLUDE)\s+([A-Z0-9][A-Z0-9@#$-]*)/);
+    if (copyM && !/^EXEC\s+SQL\b/.test(lUp)) {
+      nodes.push({ type: 'copy', name: copyM[1], label: 'COPY ' + copyM[1], srcLine: _srcLine });
+      continue;
+    }
     // END-IF orfao (o IF ja foi fechado por '.' dentro do corpo) — ignorar silenciosamente
     if (/^END-IF\b/.test(lUp)) continue;
     nodes.push({ type: 'instr', label: l, srcLine: _srcLine });
@@ -4434,6 +4443,14 @@ function renderNode(n, els, uid, meta, cs, depth) {
   if (n.type === 'sql') {
     let id = uid('sql');
     els.push({ data: { id, label: n.label, tipo: 'sql', sqlOp: n.sqlOp || 'OTHER', col: _col(), detail: n.detail || null, para: meta.currentPara || '', srcLine: n.srcLine != null ? n.srcLine : undefined } });
+    return [id, id];
+  }
+
+  if (n.type === 'copy') {
+    let id = uid('cpy');
+    els.push({ data: { id, label: 'COPY\n' + n.name, tipo: 'copy', target: n.name,
+                       col: _col(), para: meta.currentPara || '',
+                       srcLine: n.srcLine != null ? n.srcLine : undefined } });
     return [id, id];
   }
 
@@ -5171,6 +5188,25 @@ function desenhar(elements, meta) {
       { selector: 'node[tipo="sql"][sqlOp="CURSOR-OPEN"]',    style: { 'background-color': '#0e7490', 'border-color': '#164e63', 'color': '#cffafe' } },
       { selector: 'node[tipo="sql"][sqlOp="CURSOR-FETCH"]',   style: { 'background-color': '#92400e', 'border-color': '#78350f', 'color': '#fef3c7' } },
       { selector: 'node[tipo="sql"][sqlOp="CURSOR-CLOSE"]',   style: { 'background-color': '#374151', 'border-color': '#1f2937', 'color': '#f3f4f6' } },
+      /* -- COPY / INCLUDE (módulo externo / copybook) -- */
+      {
+        selector: 'node[tipo="copy"]',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': '#3d1d00',
+          'border-color': '#d97706',
+          'border-width': 2.5,
+          'border-style': 'dashed',
+          'color': '#fef3c7',
+          'font-size': '11.5px',
+          'font-weight': 700,
+          'font-family': 'Segoe UI, Arial, sans-serif',
+          'width': 185,
+          'height': 48,
+          'text-wrap': 'wrap',
+          'text-max-width': '172px'
+        }
+      },
       /* -- ARESTAS -- */
       {
         selector: 'edge',
@@ -6549,6 +6585,7 @@ function exportarHTML(opts) {
           + '<div class="leg-item"><div class="leg-cor" style="background:#e65100"></div>SQL UPDATE (DB2)</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#c62828"></div>SQL DELETE (DB2)</div>'
           + '<div class="leg-item"><div class="leg-cor" style="background:#b71c1c"></div>STOP / GOBACK</div>'
+          + '<div class="leg-item"><div class="leg-cor" style="background:#3d1d00;border:2.5px dashed #d97706"></div>COPY / INCLUDE (m&#243;dulo externo)</div>'
           + '</div>'
           + '</div></div>'
         : '')
