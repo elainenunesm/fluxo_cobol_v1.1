@@ -179,6 +179,245 @@
   .ide-canvas-dot { color: #0a7a5e; font-size: 13px; }
   .ide-canvas-hdr-info { margin-left: auto; font-size: 11px; color: #0a7a5e; font-family: monospace; letter-spacing: 0; text-transform: none; font-weight: 400; }
 
+  /* Barra de navegação do diagrama (Ir para parágrafo) */
+  /* ===== BARRA DE NAVEGAÇÃO DO DIAGRAMA ===== */
+  .diag-nav-bar {
+    display: none;
+    flex-direction: row;
+    border-bottom: 1px solid #d4d4d4;
+    flex-shrink: 0;
+    background: #f7f7f7;
+    overflow: visible;
+  }
+  .diag-nav-bar.visible { display: flex; }
+  /* Cada botão dentro da barra */
+  .diag-nav-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #0a7a5e;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    position: relative;
+    white-space: nowrap;
+    border-right: 1px solid #d4d4d4;
+    transition: background .12s;
+  }
+  .diag-nav-btn:last-child { border-right: none; }
+  .diag-nav-btn:hover { background: #ebebeb; }
+  /* Menu dropdown compartilhado */
+  .diag-nav-menu {
+    display: none;
+    position: absolute;
+    top: 100%; left: 0;
+    min-width: 300px;
+    background: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-top: none;
+    z-index: 600;
+    box-shadow: 0 6px 20px rgba(0,0,0,.15);
+  }
+  .diag-nav-menu.open { display: block; }
+  .diag-nav-filter {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 10px;
+    border: none;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 12px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    outline: none;
+    background: #f9f9f9;
+    color: #222;
+  }
+  .diag-nav-list { max-height: 300px; overflow-y: auto; }
+  #diag-exec-list { max-height: 460px; }
+  /* Item de navegação (parágrafo/seção) */
+  .diag-goto-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: #222;
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .diag-goto-item:hover { background: #e3f2fd; }
+  /* Badges parágrafo/seção */
+  .diag-goto-badge {
+    font-size: 9px; padding: 1px 5px;
+    border-radius: 3px; flex-shrink: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 700; letter-spacing: .3px;
+  }
+  .diag-goto-badge.para  { background: #2a290a; color: #dcdcaa; }
+  .diag-goto-badge.sec   { background: #0d3320; color: #4ec9b0; }
+  .diag-goto-badge.entry { background: #0a2540; color: #9cdcfe; }
+  /* ===== MENU DE EXECUÇÃO ===== */
+  .diag-exec-menu { min-width: 480px; }
+  /* Item de execução */
+  .diag-exec-item {
+    display: flex; align-items: flex-start; gap: 7px;
+    padding: 4px 8px 4px 10px;
+    font-size: 11px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: #1e293b;
+    cursor: pointer;
+    transition: background .1s;
+    border-bottom: 1px solid #f1f5f9;
+    line-height: 1.4;
+  }
+  .diag-exec-item:last-child { border-bottom: none; }
+  .diag-exec-item:hover { background: #f0f9ff; }
+  .diag-exec-badge {
+    font-size: 8px; padding: 1px 4px;
+    border-radius: 2px; flex-shrink: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 700; letter-spacing: .3px;
+    margin-top: 1px;
+    white-space: nowrap;
+  }
+  /* Cores dos badges refletindo o diagrama */
+  .diag-exec-badge.cmd  { background: #94a3b8; color: #0f172a; }
+  .diag-exec-badge.grp  { background: #475569; color: #f1f5f9; }
+  .diag-exec-badge.iff  { background: #d97706; color: #fffbeb; }
+  .diag-exec-badge.loop { background: #7c3aed; color: #f5f3ff; }
+  .diag-exec-badge.eval { background: #a21caf; color: #fdf2f8; }
+  .diag-exec-badge.io   { background: #0891b2; color: #ecfeff; }
+  .diag-exec-badge.wrt  { background: #ca8a04; color: #fef9c3; }
+  .diag-exec-badge.call { background: #1d4ed8; color: #eff6ff; }
+  .diag-exec-badge.opn  { background: #00695c; color: #e0f2f1; }
+  .diag-exec-badge.cls  { background: #880e4f; color: #fce4ec; }
+  .diag-exec-badge.stp  { background: #450a0a; color: #fef2f2; }
+  .diag-exec-badge.per  { background: #1e3a5f; color: #bfdbfe; }
+  .diag-exec-badge.sec  { background: #14532d; color: #bbf7d0; }
+  .diag-exec-badge.fall { background: #c2410c; color: #fff7ed; }
+  .diag-exec-badge.sql  { background: #6d28d9; color: #ede9fe; }
+  /* Item de execução — parágrafo/seção header inline na lista */
+  .diag-exec-item.exec-hdr {
+    background: #eef2f7;
+    font-weight: 700;
+    border-top: 2px solid #c5d4e8;
+    padding-left: 12px;
+    color: #1e3a5f;
+    font-size: 12px;
+  }
+  .diag-exec-item.exec-hdr:hover { background: #dde6f5; }
+  /* SEC header — tom verde para diferenciar de PAR */
+  .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec) {
+    background: #ecf9f2;
+    color: #14532d;
+    border-top-color: #a7d5b8;
+  }
+  .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec):hover { background: #d9f0e4; }
+  body.dark-mode .diag-exec-item.exec-hdr { background: #1a2535; border-top-color: #334155; color: #9cdcfe; }
+  body.dark-mode .diag-exec-item.exec-hdr:hover { background: #1e2d40; }
+  body.dark-mode .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec) { background: #0d2820; border-top-color: #1e4d35; color: #4ec9b0; }
+  body.dark-mode .diag-exec-item.exec-hdr:has(.diag-exec-badge.sec):hover { background: #112e26; }
+  /* Grupos colapsáveis — mapa visual de parágrafos */
+  .exec-grp-body.collapsed { display: none; }
+  .exec-grp-body > .diag-exec-item {
+    padding-left: 30px;
+    border-left: 3px solid #d6e4f7;
+    background: #fafbfe;
+  }
+  .exec-grp-body > .diag-exec-item:hover { background: #eef5ff; }
+  .exec-grp-toggle {
+    font-size: 9px; flex-shrink: 0; width: 10px; line-height: 1;
+    color: #94a3b8; font-family: monospace; user-select: none;
+    transition: transform .15s;
+  }
+  /* Arquivos / FDs */
+  .exec-fd-section { border-top: 2px solid #dde1e7; }
+  .exec-fd-hdr {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 12px; font-size: 11px; font-weight: 700;
+    color: #374151; background: #f8fafc;
+    cursor: pointer; user-select: none;
+    font-family: 'Segoe UI', Arial, sans-serif;
+  }
+  .exec-fd-hdr:hover { background: #f1f5f9; }
+  .exec-fd-body.collapsed { display: none; }
+  .exec-fd-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 12px 3px 28px;
+    font-size: 10px; color: #374151;
+    font-family: 'Cascadia Code','Fira Code',monospace;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .exec-fd-badge {
+    font-size: 8px; padding: 1px 4px; border-radius: 2px;
+    background: #0891b2; color: #ecfeff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 700; flex-shrink: 0; white-space: nowrap;
+  }
+  .exec-fd-rec {
+    font-size: 9px; color: #94a3b8;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin-left: auto;
+  }
+  /* Dark mode — grupos e FD */
+  body.dark-mode .exec-grp-body > .diag-exec-item { border-left-color: #2a3a50; background: #191e2b; }
+  body.dark-mode .exec-grp-body > .diag-exec-item:hover { background: #1b2840; }
+  body.dark-mode .exec-fd-hdr { background: #1a1f2b; color: #9cdcfe; }
+  body.dark-mode .exec-fd-hdr:hover { background: #1e2840; }
+  body.dark-mode .exec-fd-item { color: #cbd5e1; border-bottom-color: #252d3d; }
+  body.dark-mode .exec-fd-rec { color: #475569; }
+  /* Label do item de execução */
+  .diag-exec-lbl {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #1e293b;
+  }
+  .diag-exec-para {
+    font-size: 9px;
+    color: #94a3b8;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    flex-shrink: 0;
+  }
+  /* Dark mode */
+  body.dark-mode .diag-nav-bar  { background: #252526; border-bottom-color: #3c3c3c; }
+  body.dark-mode .diag-nav-btn  { color: #4ec9b0; border-right-color: #3c3c3c; }
+  body.dark-mode .diag-nav-btn:hover { background: #2a2d2e; }
+  body.dark-mode .diag-nav-menu { background: #252526; border-color: #3c3c3c; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  body.dark-mode .diag-nav-filter { background: #1e1e1e; color: #d4d4d4; border-bottom-color: #3c3c3c; }
+  body.dark-mode .diag-goto-item { color: #d4d4d4; }
+  body.dark-mode .diag-goto-item:hover { background: #094771; }
+  body.dark-mode .diag-exec-item { color: #d4d4d4; border-bottom-color: #2d2d2d; }
+  body.dark-mode .diag-exec-item:hover { background: #094771; }
+  body.dark-mode .diag-exec-lbl { color: #d4d4d4; }
+  /* Itens não-clicáveis: sem hover, sem ponteiro */
+  .diag-exec-item.exec-nc {
+    cursor: default !important;
+  }
+  .diag-exec-item.exec-nc:hover {
+    background: transparent !important;
+  }
+  body.dark-mode .diag-exec-item.exec-nc:hover {
+    background: transparent !important;
+  }
+  /* Headers não-clicáveis (parágrafo/seção sem nó no diagrama) */
+  .diag-exec-item.exec-hdr.exec-nc:hover {
+    background: #eef2f7 !important;
+    cursor: default !important;
+  }
+  body.dark-mode .diag-exec-item.exec-hdr.exec-nc:hover {
+    background: #1a2535 !important;
+  }
+  @media (max-width: 600px) {
+    body.dark-mode .diag-nav-menu { border-top-color: #4ec9b0 !important; }
+    body.dark-mode .diag-nav-menu::before { background: #555; }
+  }
+
+  /* Flash de destaque ao navegar para um nó */
+  @keyframes cyFlashAnim {
+    0%   { border-color: #ffdd00; border-width: 3px; }
+    50%  { border-color: #ff8800; border-width: 4px; }
+    100% { border-color: #ffdd00; border-width: 2px; }
+  }
+  .cy-node-flash { animation: cyFlashAnim 0.4s ease-in-out 3; }
+
   /* Ocultar botões legados no desktop */
   .btn-gerar, .btn-importar { display: none; }
   .left h3 { display: flex; }  /* mostrar o header IDE no desktop */
@@ -929,6 +1168,28 @@
     color: #888;
     font-family: Segoe UI, Arial, sans-serif;
   }
+  .cy-loading-progress-wrap {
+    width: 260px;
+    height: 6px;
+    background: #dde4ec;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .cy-loading-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1565c0, #42a5f5);
+    border-radius: 10px;
+    transition: width 0.35s ease;
+  }
+  .cy-loading-step {
+    font-size: 11px;
+    color: #aaa;
+    font-family: Segoe UI, Arial, sans-serif;
+    min-height: 14px;
+  }
+  body.dark-mode .cy-loading-progress-wrap { background: #2c3a4a; }
+  body.dark-mode .cy-loading-progress-bar  { background: linear-gradient(90deg, #4ec9b0, #9cdcfe); }
 
   /* ================================================================
      TABLET (601 - 960 px)
@@ -1095,6 +1356,83 @@
     .mobile-tab.active { color: #0a7a5e; border-top-color: #0a7a5e; }
     .mobile-tab-icon   { font-size: 20px; line-height: 1; }
     .mobile-tab-label  { font-size: 10px; line-height: 1; }
+
+    /* ---- Menus "Ir para" — bottom sheet no mobile ---- */
+    .diag-nav-bar { overflow: visible; }
+    .diag-nav-menu {
+      position: fixed !important;
+      left: 0 !important; right: 0 !important;
+      bottom: 52px !important;   /* acima da tab bar */
+      top: auto !important;
+      min-width: 0 !important;
+      width: 100% !important;
+      max-height: none !important;
+      height: 0 !important;       /* fechado: altura zero */
+      border: none !important;
+      border-top: 2px solid #0a7a5e !important;
+      border-radius: 14px 14px 0 0 !important;
+      box-shadow: 0 -4px 24px rgba(0,0,0,.25) !important;
+      z-index: 850 !important;
+      overflow: hidden !important;
+      display: flex !important;   /* sempre flex, altura controla visibilidade */
+      flex-direction: column !important;
+      transition: height .25s ease !important;
+    }
+    .diag-nav-menu.open {
+      height: 65svh !important;   /* altura explícita → flex:1 funciona na lista */
+    }
+    /* Alça visual */
+    .diag-nav-menu::before {
+      content: '';
+      display: block;
+      width: 40px; height: 4px;
+      background: #ccc;
+      border-radius: 2px;
+      margin: 8px auto 4px;
+      flex-shrink: 0;
+    }
+    .diag-exec-menu { min-width: 0 !important; }
+    /* Filtro maior para toque */
+    .diag-nav-filter {
+      padding: 10px 14px !important;
+      font-size: 14px !important;
+      flex-shrink: 0 !important;
+    }
+    /* Lista preenche o espaço restante e scrolla */
+    .diag-nav-list {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    #diag-exec-list {
+      flex: 1 1 0 !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* Items maiores para toque */
+    .diag-exec-item {
+      padding-top: 8px !important;
+      padding-bottom: 8px !important;
+      font-size: 12px !important;
+    }
+    .diag-goto-item {
+      padding: 10px 14px !important;
+      font-size: 13px !important;
+    }
+    /* Backdrop para fechar o menu */
+    .diag-nav-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      bottom: 52px;
+      background: rgba(0,0,0,.35);
+      z-index: 849;
+    }
+    .diag-nav-backdrop.open { display: block; }
   }
 
   /* ===== BOTÃO DARK/LIGHT ===== */
@@ -1796,13 +2134,37 @@
   DIAGRAMA DE FLUXO
   <span class="ide-canvas-hdr-info" id="ide-canvas-info"></span>
 </div>
+<!-- Barra de navegação do diagrama -->
+<div class="diag-nav-backdrop" id="diag-nav-backdrop" onclick="_fecharMenusNav()"></div>
+<div class="diag-nav-bar" id="diag-nav-bar">
+  <!-- Botão: Ir para parágrafo / seção -->
+  <div class="diag-nav-btn" id="diag-goto-bar" onclick="toggleDiagGoto(event)">
+    &#9654; Ir para par&#225;grafo / se&#231;&#227;o...
+    <div class="diag-nav-menu" id="diag-goto-menu">
+      <input class="diag-nav-filter" id="diag-goto-filter" type="text" placeholder="Filtrar..." onclick="event.stopPropagation()" oninput="_filtrarDiagGoto(this.value)">
+      <div class="diag-nav-list" id="diag-goto-list"></div>
+    </div>
+  </div>
+  <!-- Botão: Ir para execução -->
+  <div class="diag-nav-btn" id="diag-exec-bar" onclick="toggleDiagExec(event)">
+    &#9654; Ir para execu&#231;&#227;o...
+    <div class="diag-nav-menu diag-exec-menu" id="diag-exec-menu">
+      <input class="diag-nav-filter" id="diag-exec-filter" type="text" placeholder="Filtrar processo..." onclick="event.stopPropagation()" oninput="_filtrarDiagExec(this.value)">
+      <div class="diag-nav-list" id="diag-exec-list"></div>
+    </div>
+  </div>
+</div>
 <div id="cy"></div>
 
-<!-- Overlay de carregamento � exibido durante gera��o do fluxo -->
+<!-- Overlay de carregamento — exibido durante geração do fluxo -->
 <div id="cy-loading">
   <div class="cy-loading-spinner"></div>
   <div class="cy-loading-text">Gerando fluxo...</div>
   <div class="cy-loading-sub" id="cy-loading-sub">Analisando o programa COBOL</div>
+  <div class="cy-loading-progress-wrap">
+    <div class="cy-loading-progress-bar" id="cy-loading-bar"></div>
+  </div>
+  <div class="cy-loading-step" id="cy-loading-step"></div>
 </div>
 
 <!-- Painel de erro � exibido quando o fluxo falha ou fica vazio -->
@@ -2132,6 +2494,584 @@ function toggleCblGoto(e) {
     menu.classList.remove('open');
     document.removeEventListener('click', _cl);
   }), 10);
+}
+
+// ================= IR PARA PARÁGRAFO NO DIAGRAMA =================
+
+function _fecharMenusNav() {
+  var m1 = document.getElementById('diag-goto-menu');
+  var m2 = document.getElementById('diag-exec-menu');
+  var bd = document.getElementById('diag-nav-backdrop');
+  if (m1) m1.classList.remove('open');
+  if (m2) m2.classList.remove('open');
+  if (bd) bd.classList.remove('open');
+}
+
+function toggleDiagGoto(e) {
+  e.stopPropagation();
+  // Se o clique veio de dentro do menu (item da lista), ignora — não reabre
+  if (e.target && e.target.closest && e.target.closest('#diag-goto-menu')) return;
+  var menu = document.getElementById('diag-goto-menu');
+  var menuExec = document.getElementById('diag-exec-menu');
+  var backdrop = document.getElementById('diag-nav-backdrop');
+  if (menuExec) menuExec.classList.remove('open');
+  if (menu.classList.contains('open')) {
+    menu.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('open');
+    return;
+  }
+  // Monta lista de nós a partir do cytoscape
+  _buildDiagGotoList('');
+  menu.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+  // Foco no filtro apenas no desktop (mobile: evita teclado virtual)
+  setTimeout(function() {
+    var f = document.getElementById('diag-goto-filter');
+    if (f) {
+      f.value = '';
+      if (window.innerWidth > 600) f.focus();
+    }
+  }, 30);
+  // Fechar ao clicar fora (desktop)
+  if (window.innerWidth > 600) {
+    setTimeout(function() {
+      document.addEventListener('click', function _cl() {
+        menu.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('open');
+        document.removeEventListener('click', _cl);
+      });
+    }, 10);
+  }
+}
+
+function _buildDiagGotoList(filtro) {
+  var list = document.getElementById('diag-goto-list');
+  if (!list || !cy) return;
+  var fil = (filtro || '').toUpperCase().trim();
+  var items = [];
+
+  // Usa _currentMeta para ordem e badges corretos; fallback por varredura do cy
+  if (_currentMeta && _currentMeta.ordemParagrafos && _currentMeta.ordemParagrafos.length) {
+    var tipos = _currentMeta.tipos || {};
+    _currentMeta.ordemParagrafos.forEach(function(nome) {
+      if (fil && nome.toUpperCase().indexOf(fil) === -1) return;
+      var t = tipos[nome];
+      if (t === 'fim-paragrafo') return; // vazio, não mostrar
+      var badge = (t === 'section') ? 'sec' : 'para';
+      // Acha nó no cy com este target (tenta entryId também)
+      var found = cy.nodes().filter(function(n) { return n.data('target') === nome; });
+      if (!found.length) return; // parágrafo não renderizado
+      var nodeId = found.first().id();
+      // Preferir o nó isEntry se existir
+      found.forEach(function(n) { if (n.data('isEntry')) nodeId = n.id(); });
+      items.push({ id: nodeId, label: nome, badge: badge });
+    });
+  } else {
+    // Fallback: varredura cy, de-duping por target
+    var seen = {};
+    cy.nodes().forEach(function(n) {
+      var target = (n.data('target') || '').trim();
+      if (!target || seen[target]) return;
+      if (fil && target.toUpperCase().indexOf(fil) === -1) return;
+      var tipo = n.data('tipo') || '';
+      var badge = /section/i.test(tipo) ? 'sec' : 'para';
+      seen[target] = true;
+      items.push({ id: n.id(), label: target, badge: badge });
+    });
+    items.sort(function(a, b) { return a.label.localeCompare(b.label); });
+  }
+  if (!items.length) {
+    list.innerHTML = '<div class="diag-goto-item" style="color:#aaa;cursor:default">Nenhum resultado</div>';
+    return;
+  }
+  list.innerHTML = items.map(function(it) {
+    return '<div class="diag-goto-item" onclick="jumpDiagNode(\'' + it.id.replace(/'/g, "\\'") + '\')">' +
+      '<span class="diag-goto-badge ' + it.badge + '">' + it.badge.toUpperCase() + '</span>' +
+      it.label +
+      '</div>';
+  }).join('');
+}
+
+function _filtrarDiagGoto(val) {
+  _buildDiagGotoList(val);
+}
+
+function jumpDiagNode(nodeId, closeMenu) {
+  if (!cy) return;
+  var node = cy.getElementById(nodeId);
+  if (!node || !node.length) return;
+  // Fecha o menu que disparou (parágrafo ou execução) + backdrop mobile
+  var m = closeMenu || 'diag-goto-menu';
+  var el = document.getElementById(m);
+  if (el) el.classList.remove('open');
+  var bd = document.getElementById('diag-nav-backdrop');
+  if (bd) bd.classList.remove('open');
+  // Centraliza e destaca o nó
+  cy.animate({
+    center: { eles: node },
+    zoom: Math.max(cy.zoom(), 0.8)
+  }, { duration: 350, easing: 'ease-in-out-cubic' });
+  node.select();
+  // Piscar borda usando classe Cytoscape
+  node.flashClass('cy-flash', 1200);
+  // Sincroniza o editor de código (mesmo comportamento do clique direto no nó)
+  if (typeof destacarNoCobol === 'function') destacarNoCobol(node.data());
+}
+
+// ================= IR PARA EXECUÇÃO NO DIAGRAMA =================
+
+// Mapa tipo -> badge (inclui parágrafo e seção como nós do fluxo)
+var _EXEC_BADGE_MAP = {
+  'paragrafo':       { cls: 'per',  lbl: 'PAR', hdr: true  },
+  'section':         { cls: 'sec',  lbl: 'SEC', hdr: true  },
+  'instrucao':       { cls: 'cmd',  lbl: 'CMD'  },
+  'grupo':           { cls: 'grp',  lbl: 'GRP'  },
+  'if':              { cls: 'iff',  lbl: 'IF?'  },
+  'loop':            { cls: 'loop', lbl: 'LOOP' },
+  'evaluate':        { cls: 'eval', lbl: 'EVAL' },
+  'io':              { cls: 'io',   lbl: 'I/O'  },
+  'write':           { cls: 'wrt',  lbl: 'WRT'  },
+  'call':            { cls: 'call', lbl: 'CALL' },
+  'open':            { cls: 'opn',  lbl: 'OPN'  },
+  'close':           { cls: 'cls',  lbl: 'CLS'  },
+  'stop':            { cls: 'stp',  lbl: 'STOP' },
+  'perform':         { cls: 'per',  lbl: 'PAR', hdr: true  },
+  'perform-section': { cls: 'sec',  lbl: 'SEC', hdr: true  },
+  'perform-fall':    { cls: 'fall', lbl: 'FALL' },
+  'section-para':    { cls: 'sec',  lbl: 'SEC', hdr: true  },
+  'sql':             { cls: 'sql',  lbl: 'SQL'  },
+  'macro-start':     { cls: 'opn',  lbl: '▶',   hdr: true  },
+  'macro-end':       { cls: 'stp',  lbl: '■',   hdr: true  },
+  'macro-process':   { cls: 'per',  lbl: 'PRC', hdr: true  }
+};
+
+function toggleDiagExec(e) {
+  e.stopPropagation();
+  // Se o clique veio de dentro do menu (item da lista), ignora — não reabre
+  if (e.target && e.target.closest && e.target.closest('#diag-exec-menu')) return;
+  var menu = document.getElementById('diag-exec-menu');
+  var menuGoto = document.getElementById('diag-goto-menu');
+  var backdrop = document.getElementById('diag-nav-backdrop');
+  if (menuGoto) menuGoto.classList.remove('open');
+  if (menu.classList.contains('open')) {
+    menu.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('open');
+    return;
+  }
+  _buildDiagExecList('');
+  menu.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+  // Foco no filtro apenas no desktop (mobile: evita teclado virtual)
+  setTimeout(function() {
+    var f = document.getElementById('diag-exec-filter');
+    if (f) {
+      f.value = '';
+      if (window.innerWidth > 600) f.focus();
+    }
+  }, 30);
+  // Fechar ao clicar fora (desktop)
+  if (window.innerWidth > 600) {
+    setTimeout(function() {
+      document.addEventListener('click', function _cl() {
+        menu.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('open');
+        document.removeEventListener('click', _cl);
+      });
+    }, 10);
+  }
+}
+
+function _buildDiagExecList(filtro) {
+  var list = document.getElementById('diag-exec-list');
+  if (!list || !cy) return;
+  var fil  = (filtro || '').toUpperCase().trim();
+  var meta = _currentMeta;
+  var html = '';
+
+  // ── Índice de nós cy ──────────────────────────────────────────
+  // Montado uma vez para lookups eficientes sem iterações repetidas
+  var _cyParId   = {};  // target → id (entrada de parágrafo/seção)
+  var _cyInstrId = {};  // "para|tipo|label60" → id
+  cy.nodes().forEach(function(n) {
+    var tipo = n.data('tipo') || '';
+    var lbl  = (n.data('label')  || '').trim();
+    var tgt  = (n.data('target') || '').trim();
+    var para = (n.data('para')   || '').trim();
+    if (tgt && (tipo === 'paragrafo' || tipo === 'section' || tipo === 'section-para'
+        || tipo === 'perform' || tipo === 'perform-section' || tipo === 'perform-fall'
+        || tipo === 'macro-start' || tipo === 'macro-process' || tipo === 'macro-end')) {
+      if (!_cyParId[tgt]) _cyParId[tgt] = n.id();
+    }
+    if (lbl && tipo !== 'merge') {
+      // Normaliza \n → espaço para garantir lookup por labels multi-linha (EVALUATE, LOOP, etc.)
+      var lbl2 = lbl.replace(/\n/g, ' ');
+      var k = para + '|' + tipo + '|' + lbl2.slice(0, 60);
+      if (!_cyInstrId[k]) _cyInstrId[k] = n.id();
+    }
+  });
+
+  // ── Dados do último parseCobol ─────────────────────────────────
+  var estrutura       = (meta && meta.estrutura)       || {};
+  var tipos           = (meta && meta.tipos)           || {};
+  var ordemParagrafos = (meta && meta.ordemParagrafos) || [];
+  var secoes          = (meta && meta.secoes)          || {};  // section → [sub-parágrafos]
+  var fdMap           = (meta && meta.fdMap)           || {};
+  var fdKeys          = Object.keys(fdMap);
+
+  // ── BFS para modo filtro (lista plana) ───────────────────────
+  if (fil) {
+    var entryFlat = null;
+    cy.nodes().forEach(function(n) { if (n.data('isEntry') && !entryFlat) entryFlat = n; });
+    if (!entryFlat) {
+      var allF = cy.nodes().toArray().slice();
+      allF.sort(function(a, b) {
+        var ca = a.data('col') != null ? a.data('col') : 0;
+        var cb = b.data('col') != null ? b.data('col') : 0;
+        return ca !== cb ? ca - cb : (a.position('y') || 0) - (b.position('y') || 0);
+      });
+      if (allF.length) entryFlat = allF[0];
+    }
+    var visitedF = {}, orderedF = [], qF = entryFlat ? [entryFlat] : [];
+    while (qF.length) {
+      var cf = qF.shift();
+      if (visitedF[cf.id()]) continue;
+      visitedF[cf.id()] = true;
+      orderedF.push(cf);
+      var sF = []; cf.outgoers('node').forEach(function(s) { sF.push(s); });
+      sF.sort(function(a, b) { return (a.position('y')||0)-(b.position('y')||0); });
+      sF.forEach(function(s) { if (!visitedF[s.id()]) qF.push(s); });
+    }
+    cy.nodes().forEach(function(n) { if (!visitedF[n.id()]) orderedF.push(n); });
+
+    orderedF.forEach(function(n) {
+      var tipo = n.data('tipo') || '';
+      if (tipo === 'merge') return;
+      var b = _EXEC_BADGE_MAP[tipo];
+      if (!b) return;
+      var label = (n.data('label') || '').trim();
+      if (!label) return;
+      var hay = label.toUpperCase()
+        + '|' + (n.data('detail') || '').toUpperCase()
+        + '|' + (n.data('para')   || '').toUpperCase()
+        + '|' + (n.data('target') || '').toUpperCase();
+      if (hay.indexOf(fil) === -1) return;
+      var isHdr = !!b.hdr;
+      var detail = (n.data('detail') || '').trim().slice(0, 60);
+      var para   = n.data('para') || '';
+      var det = (detail && detail !== label)
+        ? '<span class="diag-exec-para">' + _escHtml(detail) + '</span>'
+        : (!isHdr && para ? '<span class="diag-exec-para">' + _escHtml(para) + '</span>' : '');
+      html += '<div class="diag-exec-item' + (isHdr ? ' exec-hdr' : '') + '" onclick="jumpDiagNode(\'' + n.id().replace(/'/g,"\\'") + '\',\'diag-exec-menu\')">'
+        + '<span class="diag-exec-badge ' + b.cls + '">' + b.lbl + '</span>'
+        + '<span class="diag-exec-lbl">' + _escHtml(label) + '</span>'
+        + det + '</div>';
+    });
+    // FD no filtro
+    fdKeys.forEach(function(rec) {
+      var fd = fdMap[rec];
+      if (fd.toUpperCase().indexOf(fil) === -1 && rec.toUpperCase().indexOf(fil) === -1) return;
+      html += '<div class="exec-fd-item"><span class="exec-fd-badge">FD</span>'
+        + '<span>' + _escHtml(fd) + '</span>'
+        + '<span class="exec-fd-rec">\u2190 ' + _escHtml(rec) + '</span></div>';
+    });
+    list.innerHTML = html || '<div class="diag-exec-item" style="color:#aaa;cursor:default">Nenhum resultado</div>';
+    return;
+  }
+
+  // ── Modo ÁRVORE hierárquica (sem filtro) ──────────────────────
+  if (!meta || !meta.estrutura) {
+    list.innerHTML = '<div class="diag-exec-item" style="color:#aaa;cursor:default">Analise um programa primeiro</div>';
+    return;
+  }
+
+  var MAX_D = 12;
+
+  // Emite um item-instrução (CMD/SQL/IF/LOOP/etc.) com indentação depth
+  function treeItem(depth, badgeCls, badgeLbl, label, nid, addStyle) {
+    var indent  = 10 + depth * 14;
+    var onClick = nid ? 'jumpDiagNode(\'' + nid.replace(/'/g, "\\'") + '\',\'diag-exec-menu\')' : '';
+    html += '<div class="diag-exec-item' + (onClick ? '' : ' exec-nc') + '" style="padding-left:' + indent + 'px;'
+      + (onClick ? '' : 'cursor:default;') + (addStyle || '') + '"'
+      + (onClick ? ' onclick="' + onClick + '"' : '') + '>';
+    if (badgeCls) {
+      html += '<span class="diag-exec-badge ' + badgeCls + '">' + badgeLbl + '</span>';
+    } else {
+      html += '<span style="display:inline-block;width:24px;flex-shrink:0"></span>';
+    }
+    html += '<span class="diag-exec-lbl">' + _escHtml(label) + '</span></div>';
+  }
+
+  // Emite cabeçalho de parágrafo/seção e recursivamente seus filhos
+  var _shownPars = {};  // rastreia todos os parágrafos já emitidos (qualquer profundidade)
+
+  function renderPar(parName, parentTipo, depth, visited) {
+    if (depth > MAX_D) return;
+    _shownPars[parName] = true;  // marca como mostrado
+    var parId  = _cyParId[parName] || null;
+    var tipo   = parentTipo || tipos[parName] || 'paragrafo';
+    var b      = (tipo === 'section') ? { cls: 'sec', lbl: 'SEC' } : { cls: 'per', lbl: 'PAR' };
+    var nl     = (estrutura[parName] || []).length;
+    var nlStr  = nl > 0 ? ' (' + nl + ' linha' + (nl !== 1 ? 's' : '') + ')' : '';
+    var indent = 10 + depth * 14;
+    html += '<div class="diag-exec-item exec-hdr' + (parId ? '' : ' exec-nc') + '" style="padding-left:' + indent + 'px"'
+      + (parId ? ' onclick="jumpDiagNode(\'' + parId.replace(/'/g,"\\'") + '\',\'diag-exec-menu\')"' : '') + '>'
+      + '<span class="diag-exec-badge ' + b.cls + '">' + b.lbl + '</span>'
+      + '<span class="diag-exec-lbl">' + _escHtml(parName) + '</span>'
+      + '<span class="diag-exec-para">' + _escHtml(nlStr) + '</span>'
+      + '</div>';
+    if (visited[parName]) {
+      treeItem(depth + 1, null, null, '\u21a9 j\u00e1 exibido', null, 'color:#94a3b8;font-style:italic;');
+      return;
+    }
+    // Seção pode ter sub-parágrafos mesmo sem instruções diretas
+    var _subPars = secoes[parName] || [];
+    if (!estrutura[parName] && !_subPars.length) return;
+    var v2 = Object.assign({}, visited);
+    v2[parName] = true;
+    // Renderiza instruções diretas do parágrafo/seção (se houver)
+    if (estrutura[parName] && estrutura[parName].length) {
+      renderAstNodes(buildAST(estrutura[parName], null, fdMap), parName, depth + 1, v2);
+    }
+    // Para seções COBOL: o conteúdo real fica nos sub-parágrafos (NOME SECTION. → NOME.)
+    _subPars.forEach(function(subPar) {
+      if (!v2[subPar] && tipos[subPar] !== 'fim-paragrafo') {
+        renderPar(subPar, tipos[subPar] || 'paragrafo', depth + 1, v2);
+      }
+    });
+  }
+
+  function renderAstNodes(ast, parName, depth, visited) {
+    if (!ast || !ast.length || depth > MAX_D) return;
+    ast.forEach(function(n) { renderAstNode(n, parName, depth, visited); });
+  }
+
+  function renderAstNode(n, parName, depth, visited) {
+    if (!n) return;
+    var nt  = n.type || '';
+    var lbl, brs, nid;
+
+    if (nt === 'perform') {
+      var tgt   = n.target;
+      var ttype = tipos[tgt];
+      if (ttype === 'fim-paragrafo') { treeItem(depth, 'per', 'PAR', tgt + ' [EXIT]', null); return; }
+      renderPar(tgt, ttype || 'paragrafo', depth, visited);
+
+    } else if (nt === 'perform-thru') {
+      // Calcula o range de parágrafos entre n.from e n.to (inclusive)
+      var _fiT = ordemParagrafos.indexOf(n.from);
+      var _tiT = ordemParagrafos.indexOf(n.to);
+      var _rngT = (_fiT >= 0 && _tiT >= 0 && _fiT <= _tiT)
+        ? ordemParagrafos.slice(_fiT, _tiT + 1).filter(function(p) { return tipos[p] !== 'section'; })
+        : [];
+      // Cabeçalho com contagem (parágrafos reais + linhas)
+      var _cntPars  = _rngT.filter(function(p) { return tipos[p] !== 'fim-paragrafo'; }).length;
+      var _cntLines = _rngT.reduce(function(a, p) { return a + (estrutura[p] || []).length; }, 0);
+      var _infoT = _rngT.length > 0
+        ? ' (' + _cntPars + ' par\u00e1gr.' + (_cntLines > 0 ? ', ' + _cntLines + ' linhas' : '') + ')'
+        : '';
+      var _lblThru = 'PERFORM ' + n.from + ' THRU ' + n.to + (n.cond ? '  ' + n.cond : '') + _infoT;
+      treeItem(depth, 'per', 'PAR', _lblThru, _cyParId[n.from] || null);
+      // Expande cada parágrafo do range aninhado
+      _rngT.forEach(function(p) {
+        if (tipos[p] === 'fim-paragrafo') {
+          _shownPars[p] = true;  // marca como mostrado mesmo sendo EXIT
+          treeItem(depth + 1, 'per', 'PAR', p + '\u2002[EXIT]', _cyParId[p] || null, 'color:#94a3b8;');
+        } else {
+          renderPar(p, tipos[p] || 'paragrafo', depth + 1, visited);
+        }
+      });
+
+    } else if (nt === 'loop') {
+      lbl  = n.label.replace(/\n/g, ' ');
+      nid  = _cyInstrId[parName + '|loop|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'loop', 'LOOP', lbl, nid);
+      if (n.named && estrutura[n.named] && !visited[n.named] && depth < MAX_D) {
+        renderPar(n.named, tipos[n.named] || 'paragrafo', depth + 1, visited);
+      } else if (n.body && n.body.length) {
+        renderAstNodes(n.body, parName, depth + 1, visited);
+      }
+
+    } else if (nt === 'if') {
+      lbl = 'IF ' + n.label.replace(/^IF\s+/i, '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|if|' + n.label.replace(/\n/g, ' ').slice(0, 60)] || null;
+      treeItem(depth, 'iff', 'IF?', lbl, nid);
+      brs = [];
+      if (n.sim && n.sim.length) brs.push({ tag: '[SIM]',  ns: n.sim });
+      if (n.nao && n.nao.length) brs.push({ tag: '[N\u00c3O]', ns: n.nao });
+      brs.forEach(function(br) {
+        treeItem(depth + 1, null, null, br.tag, null, 'color:#64748b;font-style:italic;');
+        renderAstNodes(br.ns, parName, depth + 2, visited);
+      });
+
+    } else if (nt === 'evaluate') {
+      lbl = 'EVALUATE ' + (n.label || 'TRUE');
+      nid = _cyInstrId[parName + '|evaluate|' + (n.label || 'EVALUATE').slice(0, 60)] || null;
+      treeItem(depth, 'eval', 'EVAL', lbl, nid);
+      (n.whens || []).forEach(function(w) {
+        var whenLbl = '[' + (w.label || '') + ']';
+        treeItem(depth + 1, null, null, whenLbl, null, 'color:#64748b;font-style:italic;');
+        if (w.nodes && w.nodes.length) renderAstNodes(w.nodes, parName, depth + 2, visited);
+      });
+
+    } else if (nt === 'io') {
+      // DISPLAY / ACCEPT / DELETE solitário (sem AT END/INVALID KEY)
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|io|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'io', 'I/O', lbl, nid);
+
+    } else if (nt === 'read') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|io|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'io', 'I/O', lbl, nid);
+      brs = [];
+      if (n.atEnd      && n.atEnd.length)      brs.push({ tag: '[AT END]',          ns: n.atEnd });
+      if (n.notAtEnd   && n.notAtEnd.length)   brs.push({ tag: '[N\u00c3O AT END]', ns: n.notAtEnd });
+      if (n.invalidKey && n.invalidKey.length) brs.push({ tag: '[INVALID KEY]',     ns: n.invalidKey });
+      brs.forEach(function(br) {
+        treeItem(depth + 1, null, null, br.tag, null, 'color:#64748b;font-style:italic;');
+        renderAstNodes(br.ns, parName, depth + 2, visited);
+      });
+
+    } else if (nt === 'call') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|call|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'call', 'CALL', lbl, nid);
+      brs = [];
+      if (n.onException    && n.onException.length)    brs.push({ tag: '[ON EXCEPTION]',     ns: n.onException });
+      if (n.notOnException && n.notOnException.length) brs.push({ tag: '[NOT ON EXCEPTION]', ns: n.notOnException });
+      brs.forEach(function(br) {
+        treeItem(depth + 1, null, null, br.tag, null, 'color:#64748b;font-style:italic;');
+        renderAstNodes(br.ns, parName, depth + 2, visited);
+      });
+
+    } else if (nt === 'group') {
+      // Grupo: um único nó cy do tipo 'grupo' com label=resumo e detail=linhas individuais
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|grupo|' + lbl.slice(0, 60)] || null;
+      // Cabeçalho do grupo — clicável (navega para o nó no diagrama)
+      treeItem(depth, 'grp', 'GRP', lbl, nid);
+      // Sub-itens das linhas individuais (apenas visual, sem onclick)
+      (n.detail || '').split('\n').forEach(function(s) {
+        if (s.trim()) treeItem(depth + 1, null, null, s.trim(), null, 'color:#64748b;');
+      });
+
+    } else if (nt === 'goto') {
+      nid = _cyInstrId[parName + '|goto|GO TO: ' + n.target] || null;
+      treeItem(depth, 'cmd', 'GO TO', 'GO TO ' + n.target, nid);
+
+    } else if (nt === 'stop') {
+      nid = _cyInstrId[parName + '|stop|' + (n.label || 'STOP RUN').slice(0, 60)] || null;
+      treeItem(depth, 'stp', 'STOP', n.label || 'STOP RUN', nid);
+
+    } else if (nt === 'sql') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|sql|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'sql', 'SQL', lbl, nid);
+
+    } else if (nt === 'open') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|open|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'opn', 'OPN', lbl, nid);
+
+    } else if (nt === 'close') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|close|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'cls', 'CLS', lbl, nid);
+
+    } else if (nt === 'write') {
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      nid = _cyInstrId[parName + '|write|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'wrt', 'WRT', lbl, nid);
+
+    } else {
+      // instr e outros genéricos
+      lbl = (n.label || '').replace(/\n/g, ' ');
+      if (!lbl) return;
+      nid = _cyInstrId[parName + '|instrucao|' + lbl.slice(0, 60)] || null;
+      treeItem(depth, 'cmd', 'CMD', lbl, nid);
+    }
+  }
+
+  // Acha parágrafo de entrada (mesmo critério de gerarFluxo)
+  var entryNode = null;
+  cy.nodes().forEach(function(n) { if (n.data('isEntry')) entryNode = n; });
+  var entryPar = entryNode
+    ? (entryNode.data('target') || entryNode.data('label'))
+    : (ordemParagrafos[0] || '');
+
+  if (entryPar) renderPar(entryPar, tipos[entryPar] || 'paragrafo', 0, {});
+
+  // ── Parágrafos/seções não alcançados pelo entry point ─────────
+  // Programas grandes têm seções não chamadas diretamente do entry;
+  // renderiza-as em sequência após a árvore principal.
+  ordemParagrafos.forEach(function(par) {
+    if (_shownPars[par]) return;                 // já apareceu na árvore
+    if (tipos[par] === 'fim-paragrafo') return;  // EXIT vazio, sem interesse
+    // Seção cujos sub-parágrafos já foram todos exibidos na árvore principal:
+    // pode ser a seção-container do entry point (ex: MAIN-SECTION que contém MAIN).
+    // Evita duplicar conteúdo e exibir header não-clicável sem utilidade.
+    if (tipos[par] === 'section') {
+      var _subs = (secoes[par] || []).filter(function(s) { return tipos[s] !== 'fim-paragrafo'; });
+      if (_subs.length > 0 && _subs.every(function(s) { return _shownPars[s]; })) return;
+    }
+    // Parágrafo sem nó no diagrama e sem conteúdo (ex: pseudo-entrada PROG3000 gerada
+    // automaticamente após PROCEDURE DIVISION quando o código está vazio antes da 1ª seção).
+    if (!_cyParId[par] && !(estrutura[par] || []).length && !(secoes[par] || []).length) return;
+    renderPar(par, tipos[par] || 'paragrafo', 0, {});
+  });
+
+  // ── Seção Arquivos / FDs ──────────────────────────────────────
+  if (fdKeys.length) {
+    var fdByFile = {};
+    fdKeys.forEach(function(rec) {
+      var fd = fdMap[rec];
+      if (!fdByFile[fd]) fdByFile[fd] = [];
+      fdByFile[fd].push(rec);
+    });
+    var fdBody = '';
+    Object.keys(fdByFile).forEach(function(fd) {
+      fdByFile[fd].forEach(function(rec) {
+        fdBody += '<div class="exec-fd-item"><span class="exec-fd-badge">FD</span>'
+          + '<span>' + _escHtml(fd) + '</span>'
+          + '<span class="exec-fd-rec">\u2190 ' + _escHtml(rec) + '</span></div>';
+      });
+    });
+    html += '<div class="exec-fd-section">'
+      + '<div class="exec-fd-hdr" id="exec-fd-hdr" onclick="_toggleExecFd()">'
+      + '<span class="exec-grp-toggle">\u25bc</span>'
+      + '<span>\uD83D\uDCC1 Arquivos / Registros</span></div>'
+      + '<div class="exec-fd-body" id="exec-fd-body">' + fdBody + '</div></div>';
+  }
+
+  list.innerHTML = html || '<div class="diag-exec-item" style="color:#aaa;cursor:default">Nenhum resultado</div>';
+}
+
+function _filtrarDiagExec(val) {
+  _buildDiagExecList(val);
+}
+
+// Colapsa/expande um grupo de parágrafo no menu de execução
+function _toggleExecGrp(hdrEl) {
+  var grp  = hdrEl.parentNode;
+  var body = grp && grp.querySelector('.exec-grp-body');
+  if (!body) return;
+  var coll = body.classList.toggle('collapsed');
+  var tog  = hdrEl.querySelector('.exec-grp-toggle');
+  if (tog) tog.textContent = coll ? '▶' : '▼';
+}
+
+// Colapsa/expande a seção de arquivos/FDs
+function _toggleExecFd() {
+  var body = document.getElementById('exec-fd-body');
+  var hdr  = document.getElementById('exec-fd-hdr');
+  if (!body) return;
+  var coll = body.classList.toggle('collapsed');
+  var tog  = hdr && hdr.querySelector('.exec-grp-toggle');
+  if (tog) tog.textContent = coll ? '▶' : '▼';
+}
+
+function _escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function jumpCblLine(lineIdx) {
@@ -3127,12 +4067,15 @@ function renderNode(n, els, uid, meta, cs, depth) {
         if (tipos[par] === 'fim-paragrafo') return;
         const _parCol = (depth === 0) ? ++meta.colCounter : _newCol;
         meta.currentCol = _parCol;
+        const _prevParaSec = meta.currentPara;
+        meta.currentPara = par;  // nós filhos ficam com para=par correto
         let pid = uid('sp');
         els.push({ data: { id: pid, label: par, tipo: 'section-para', target: par, col: _parCol } });
         els.push({ data: { source: last, target: pid } });
         let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
         if (fc) els.push({ data: { source: pid, target: fc } });
         last = lc || pid;
+        meta.currentPara = _prevParaSec;
       });
       meta.currentCol = _callerCol;
       return [id, last];
@@ -3165,12 +4108,15 @@ function renderNode(n, els, uid, meta, cs, depth) {
       // Perform-thru expande inline; n�o cria colunas separadas
       const _parColThru = _callerColThru;
       meta.currentCol = _parColThru;
+      const _prevParaThru = meta.currentPara;
+      meta.currentPara = par;  // nós filhos ficam com para=par correto
       let pid = uid('p');
       els.push({ data: { id: pid, label: par, tipo: 'perform-fall', target: par, col: _parColThru } });
       els.push({ data: { source: last, target: pid } });
       let [fc, lc] = renderSeq(buildAST(estrutura[par] || [], meta.lineNumMap ? meta.lineNumMap[par] : null, meta.fdMap), els, uid, meta, ns, depth + 1);
       if (fc) els.push({ data: { source: pid, target: fc } });
       last = lc || pid;
+      meta.currentPara = _prevParaThru;
     });
     meta.currentCol = _callerColThru;
     return [id, last];
@@ -3179,7 +4125,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
   if (n.type === 'loop') {
     const _loopCol = _col();
     let loopId = uid('loop');
-    els.push({ data: { id: loopId, label: n.label, tipo: 'loop', col: _loopCol } });
+    els.push({ data: { id: loopId, label: n.label, tipo: 'loop', col: _loopCol, para: meta.currentPara || '' } });
     let mId = uid('mg');
     els.push({ data: { id: mId, label: '', tipo: 'merge', col: _loopCol } });
     if (n.body && n.body.length) {
@@ -3253,7 +4199,7 @@ function renderNode(n, els, uid, meta, cs, depth) {
 
   if (n.type === 'goto') {
     let id = uid('gt');
-    els.push({ data: { id, label: 'GO TO: ' + n.target, tipo: 'goto', target: n.target, col: _col() } });
+    els.push({ data: { id, label: 'GO TO: ' + n.target, tipo: 'goto', target: n.target, col: _col(), para: meta.currentPara || '' } });
     return [id, id];
   }
 
@@ -3448,11 +4394,14 @@ function desenhar(elements, meta) {
     // Performance para diagramas grandes
     textureOnViewport: true,
     hideEdgesOnViewport: true,
-    motionBlurOpacity: 0,
-    pixelRatio: 'auto',
+    motionBlur: true,
+    motionBlurOpacity: 0.12,
+    pixelRatio: 1,
     wheelSensitivity: 0.3,
     minZoom: 0.05,
     maxZoom: 4,
+    boxSelectionEnabled: false,
+    selectionType: 'single',
     style: [
       {
         selector: 'node',
@@ -3487,6 +4436,17 @@ function desenhar(elements, meta) {
           'overlay-color': '#f57c00',
           'overlay-opacity': 0.10,
           'overlay-padding': 5
+        }
+      },
+      {
+        selector: 'node.cy-flash',
+        style: {
+          'border-width': 4,
+          'border-color': '#ffdd00',
+          'border-style': 'solid',
+          'overlay-color': '#ffdd00',
+          'overlay-opacity': 0.20,
+          'overlay-padding': 6
         }
       },
       {
@@ -4065,8 +5025,10 @@ function desenhar(elements, meta) {
   } else if (_layoutModo === 'lr') {
     aplicarPosLayoutLoop();
     aplicarLayoutColunas();
+    _ajustarArestasLongas();
   } else {
     aplicarPosLayoutLoop();
+    _ajustarArestasLongas();
   }
 
   // Zoom inicial inteligente:
@@ -4133,6 +5095,22 @@ function desenhar(elements, meta) {
   cy.on('free',      'node', function() { cyContainer.style.cursor = 'grab'; });
   cy.on('mousedown', function(evt) { if (evt.target === cy) cyContainer.style.cursor = 'grabbing'; });
   cy.on('mouseup',   function(evt) { if (evt.target === cy) cyContainer.style.cursor = 'grab'; });
+
+  // ---- Performance durante pan: oculta labels para arrastar mais leve ----
+  var _panTimer = null;
+  cy.on('viewport', function() {
+    if (_panTimer) clearTimeout(_panTimer);
+    cy.batch(function() {
+      cy.nodes().style({ 'label': '' });
+      cy.edges().style({ 'label': '' });
+    });
+    _panTimer = setTimeout(function() {
+      cy.batch(function() {
+        cy.nodes().style({ 'label': 'data(label)' });
+        cy.edges().style({ 'label': 'data(label)' });
+      });
+    }, 120);
+  });
   // -------------------------------------------------------
 
   cy.on("tap", "node", function(evt) {
@@ -5945,6 +6923,14 @@ function _mostrarErroFluxo(titulo, msg, dica) {
   document.getElementById('cy-erro').classList.add('ativo');
 }
 
+// Atualiza barra de progresso e etapa no overlay de carregamento
+function _setProgresso(pct, etapa) {
+  var bar  = document.getElementById('cy-loading-bar');
+  var step = document.getElementById('cy-loading-step');
+  if (bar)  bar.style.width  = pct + '%';
+  if (step) step.textContent = etapa || '';
+}
+
 function analisar() {
   const code = document.getElementById("input").value;
   if (!code || !code.trim()) {
@@ -5964,58 +6950,110 @@ function analisar() {
   const subEl = document.getElementById('cy-loading-sub');
   if (subEl) subEl.textContent = nLinhas.toLocaleString('pt-BR') + ' linha' + (nLinhas !== 1 ? 's' : '') + ' \u2014 aguarde...';
 
-  // Mobile: j� muda para aba Diagrama antes de processar
+  // Mobile: j\u00e1 muda para aba Diagrama antes de processar
   if (typeof mobTab === 'function' && window.innerWidth <= 600) { mobTab('flow'); }
 
-  // Exibe overlay de carregamento
+  // Oculta barra de navegação enquanto regenera
+  var _dgbEl = document.getElementById('diag-nav-bar');
+  if (_dgbEl) _dgbEl.classList.remove('visible');
+
+  // Exibe overlay e inicializa progresso
   const loadEl = document.getElementById('cy-loading');
   if (loadEl) loadEl.classList.add('ativo');
+  _setProgresso(0, '');
 
+  // -- Etapa 1: Parse COBOL --
   setTimeout(function() {
-    try {
-      const sel = document.getElementById("depth-select");
-      // _maxDepthOverride permite que importarSessao restaure o maxDepth salvo;
-      // na aus�ncia do elemento de UI e sem override, usa 30 (seguro para qualquer COBOL real).
-      const maxDepth = sel ? parseInt(sel.value, 10) : (window._maxDepthOverride || 30);
-      window._maxDepthOverride = null;  // consume o override ap�s usar
-      const meta = parseCobol(code);
-      meta.maxDepth = maxDepth;
-      _currentMeta = meta;
-      const { estrutura, tipos, secoes } = meta;
-      const _viewSel = document.getElementById('view-select');
-      const _viewMode = _viewSel ? _viewSel.value : 'detail';
-      const fluxo = (_viewMode === 'macro')
-        ? gerarMacroFluxo(meta)
-        : gerarFluxo(estrutura, tipos, secoes, meta);
-
-      // Verifica se o fluxo gerou n�s reais
-      const nosReais = fluxo.filter(function(e){ return e.data && e.data.id && !e.data.source; });
-      if (!nosReais.length) {
-        // Detecta o motivo mais prov�vel
-        const temProc = /PROCEDURE\s+DIVISION/i.test(code);
-        const msg     = !temProc
-          ? 'PROCEDURE DIVISION n\u00e3o encontrado no c\u00f3digo.'
-          : 'O PROCEDURE DIVISION foi encontrado mas nenhum par\u00e1grafo ou instru\u00e7\u00e3o foi detectado.';
-        const dica = !temProc
-          ? 'Verifique se o c\u00f3digo cont\u00e9m a linha "PROCEDURE DIVISION" (obrigat\u00f3ria para gerar o fluxo).'
-          : 'Certifique-se de que os par\u00e1grafos est\u00e3o no formato correto: NOME-DO-PARAGRAFO. ou NOME-DO-PARAGRAFO SECTION.';
-        _mostrarErroFluxo('Fluxo vazio — nenhum nó gerado', msg, dica);
+    _setProgresso(10, 'Lendo estrutura do programa...');
+    var sel, maxDepth, meta;
+    setTimeout(function() {
+      try {
+        _setProgresso(20, 'Identificando par\u00e1grafos e se\u00e7\u00f5es...');
+        sel = document.getElementById("depth-select");
+        maxDepth = sel ? parseInt(sel.value, 10) : (window._maxDepthOverride || 30);
+        window._maxDepthOverride = null;
+        meta = parseCobol(code);
+        meta.maxDepth = maxDepth;
+        _currentMeta = meta;
+      } catch(err) {
+        _mostrarErroFluxo(
+          'Erro ao analisar o programa',
+          err && err.message ? err.message : String(err),
+          'Verifique se o c\u00f3digo COBOL est\u00e1 bem formado e tente novamente.'
+        );
         if (loadEl) loadEl.classList.remove('ativo');
         return;
       }
 
-      desenhar(fluxo, meta);
-      if (window._refreshParaOffsets) window._refreshParaOffsets();
-      _atualizarIDE(meta);
-    } catch(err) {
-      _mostrarErroFluxo(
-        'Erro ao gerar o fluxo',
-        err && err.message ? err.message : String(err),
-        'Verifique se o c\u00f3digo COBOL est\u00e1 bem formado e tente novamente. Se o problema persistir, simplifique o trecho que causa o erro.'
-      );
-    } finally {
-      if (loadEl) loadEl.classList.remove('ativo');
-    }
+      // -- Etapa 2: Gerar fluxo --
+      _setProgresso(35, 'Construindo grafo de fluxo...');
+      setTimeout(function() {
+        var fluxo;
+        try {
+          _setProgresso(55, 'Expandindo PERFORM e estruturas de controle...');
+          const { estrutura, tipos, secoes } = meta;
+          const _viewSel = document.getElementById('view-select');
+          const _viewMode = _viewSel ? _viewSel.value : 'detail';
+          fluxo = (_viewMode === 'macro')
+            ? gerarMacroFluxo(meta)
+            : gerarFluxo(estrutura, tipos, secoes, meta);
+        } catch(err) {
+          _mostrarErroFluxo(
+            'Erro ao gerar o fluxo',
+            err && err.message ? err.message : String(err),
+            'Verifique se o c\u00f3digo COBOL est\u00e1 bem formado e tente novamente. Se o problema persistir, simplifique o trecho que causa o erro.'
+          );
+          if (loadEl) loadEl.classList.remove('ativo');
+          return;
+        }
+
+        // Verifica se o fluxo gerou n\u00f3s reais
+        const nosReais = fluxo.filter(function(e){ return e.data && e.data.id && !e.data.source; });
+        if (!nosReais.length) {
+          const temProc = /PROCEDURE\s+DIVISION/i.test(code);
+          const msg     = !temProc
+            ? 'PROCEDURE DIVISION n\u00e3o encontrado no c\u00f3digo.'
+            : 'O PROCEDURE DIVISION foi encontrado mas nenhum par\u00e1grafo ou instru\u00e7\u00e3o foi detectado.';
+          const dica = !temProc
+            ? 'Verifique se o c\u00f3digo cont\u00e9m a linha "PROCEDURE DIVISION" (obrigat\u00f3ria para gerar o fluxo).'
+            : 'Certifique-se de que os par\u00e1grafos est\u00e3o no formato correto: NOME-DO-PARAGRAFO. ou NOME-DO-PARAGRAFO SECTION.';
+          _mostrarErroFluxo('Fluxo vazio \u2014 nenhum n\u00f3 gerado', msg, dica);
+          if (loadEl) loadEl.classList.remove('ativo');
+          return;
+        }
+
+        // -- Etapa 3: Renderizar diagrama --
+        _setProgresso(70, 'Renderizando ' + nosReais.length + ' n\u00f3s no diagrama...');
+        setTimeout(function() {
+          try {
+            _setProgresso(85, 'Aplicando layout e posicionando elementos...');
+            desenhar(fluxo, meta);
+          } catch(err) {
+            _mostrarErroFluxo(
+              'Erro ao renderizar o diagrama',
+              err && err.message ? err.message : String(err),
+              'O fluxo foi gerado mas houve falha ao desenhar. Tente o layout Compacto.'
+            );
+            if (loadEl) loadEl.classList.remove('ativo');
+            return;
+          }
+
+          // -- Etapa 4: Finalizar --
+          _setProgresso(95, 'Finalizando...');
+          setTimeout(function() {
+            if (window._refreshParaOffsets) window._refreshParaOffsets();
+            _atualizarIDE(meta);
+            _setProgresso(100, 'Pronto!');
+            var _dgb = document.getElementById('diag-nav-bar');
+            if (_dgb) _dgb.classList.add('visible');
+            setTimeout(function() {
+              if (loadEl) loadEl.classList.remove('ativo');
+              _setProgresso(0, '');
+            }, 300);
+          }, 20);
+        }, 20);
+      }, 20);
+    }, 20);
   }, 30);
 }
 
@@ -6299,22 +7337,67 @@ function aplicarPosLayoutLoop() {
   });
 }
 
+// Detecta arestas longas (distância entre nós > limiar) e aplica curva bezier lateral.
+// Evita que setas longas passem sobre nós intermediários no layout TB.
+function _ajustarArestasLongas() {
+  if (!cy) return;
+  var DIST_LIMIAR = 220; // px: arestas acima disto recebem curva lateral
+  cy.edges().forEach(function(e) {
+    if (e.data('label')) return; // arestas com label (IF/LOOP/FIM) já têm estilo próprio
+    var sp = e.source().position();
+    var tp = e.target().position();
+    if (!sp || !tp) return;
+    var dist = Math.sqrt(
+      (tp.x - sp.x) * (tp.x - sp.x) + (tp.y - sp.y) * (tp.y - sp.y)
+    );
+    if (dist > DIST_LIMIAR) {
+      // Curva proporcional ao comprimento, máximo 180px de desvio lateral
+      var cpDist = Math.min(50 + dist * 0.18, 180);
+      e.style({
+        'curve-style': 'bezier',
+        'control-point-distances': cpDist,
+        'control-point-weights': 0.5
+      });
+    }
+  });
+}
+
 // Reorganiza sem regerar o fluxo (aplica s� novo layout)
 function reorganizar() {
   if (!cy) return;
-  _rodarLayout();
-  var _modo = ((document.getElementById('layout-select') || {}).value || 'tb');
+
+  var loadEl = document.getElementById('cy-loading');
+  var subEl  = document.getElementById('cy-loading-sub');
+  if (subEl) subEl.textContent = 'Reorganizando layout...';
+  if (loadEl) loadEl.classList.add('ativo');
+  _setProgresso(10, 'Calculando novo layout...');
+
   setTimeout(function() {
-    if (_modo === 'lr') {
-      aplicarPosLayoutLoop();
-      aplicarLayoutColunas();
-    } else {
-      aplicarPosLayoutLoop();
-    }
-    cy.fit(undefined, 50);
-    cy.center();
-    atualizarZoomLabel();
-  }, 50);
+    _setProgresso(40, 'Aplicando dagre...');
+    _rodarLayout();
+    var _modo = ((document.getElementById('layout-select') || {}).value || 'tb');
+    _setProgresso(70, 'Ajustando posições...');
+    setTimeout(function() {
+      if (_modo === 'lr') {
+        aplicarPosLayoutLoop();
+        aplicarLayoutColunas();
+        _ajustarArestasLongas();
+      } else {
+        aplicarPosLayoutLoop();
+        _ajustarArestasLongas();
+      }
+      cy.fit(undefined, 50);
+      cy.center();
+      atualizarZoomLabel();
+      _setProgresso(100, 'Pronto!');
+      var _dgb = document.getElementById('diag-nav-bar');
+      if (_dgb) _dgb.classList.add('visible');
+      setTimeout(function() {
+        if (loadEl) loadEl.classList.remove('ativo');
+        _setProgresso(0, '');
+      }, 300);
+    }, 50);
+  }, 30);
 }
 
 // ================= ZOOM CONTROLS =================
