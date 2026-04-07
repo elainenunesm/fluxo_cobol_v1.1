@@ -2748,7 +2748,8 @@ function _buildDiagExecList(filtro) {
     var para = (n.data('para')   || '').trim();
     if (tgt && (tipo === 'paragrafo' || tipo === 'section' || tipo === 'section-para'
         || tipo === 'perform' || tipo === 'perform-section' || tipo === 'perform-fall'
-        || tipo === 'macro-start' || tipo === 'macro-process' || tipo === 'macro-end')) {
+        || tipo === 'macro-start' || tipo === 'macro-process' || tipo === 'macro-end'
+        || tipo === 'goto')) {
       if (!_cyParId[tgt]) _cyParId[tgt] = n.id();
     }
     if (lbl && tipo !== 'merge') {
@@ -2780,6 +2781,16 @@ function _buildDiagExecList(filtro) {
       secoes[tgt].forEach(function(subPar) {
         if (!_cyParId[subPar]) _cyParId[subPar] = n.id();
       });
+    }
+  });
+  // Fallback label-based: parágrafos sem target mas cujo label é o próprio nome
+  cy.nodes().forEach(function(n) {
+    var lbl  = (n.data('label') || '').trim();
+    var tipo = n.data('tipo') || '';
+    if (lbl && !_cyParId[lbl] &&
+        (tipo === 'paragrafo' || tipo === 'section' || tipo === 'section-para'
+         || tipo === 'perform' || tipo === 'perform-section' || tipo === 'perform-fall')) {
+      _cyParId[lbl] = n.id();
     }
   });
 
